@@ -33,6 +33,12 @@ Formaat en protocol: [docs/PACKS.md](docs/PACKS.md).
 - De FPS/CPU- en geheugenoverlays staan uit; BOOT zet ze aan en uit.
 - Een preview-tool die de echte schermcode op de Mac naar PNG's rendert.
 
+**Fase 3** is de web-app ([app/](app/)): packs maken in de browser, online
+bewaren op je eigen server (Docker) en via Bluetooth naar Pukks sturen.
+
+**Fase 4** (battle: twee Pukks in dezelfde quiz) en **fase 5** (geluid) staan
+op de roadmap in [docs/NOTES.md](docs/NOTES.md).
+
 Beslissingen en open vragen staan in [docs/NOTES.md](docs/NOTES.md).
 
 ## Documentatie
@@ -133,7 +139,67 @@ omdat de firmware crasht of de USB-poort niet verschijnt):
 Na het flashen in downloadmodus het bord nog een keer uit/aan zetten als de
 firmware niet vanzelf start.
 
-## Packs maken en uploaden
+## Web-app
+
+In de app maak en bewerk je packs, en stuur je ze naar een of meer Pukks. De
+packs staan in een database op je server; iedereen met het wachtwoord ziet
+dezelfde packs.
+
+Bluetooth in de browser (Web Bluetooth) werkt in **Chrome en Edge** op een
+computer of Android-telefoon, en alleen via **https** (of `localhost`). Safari
+op iPhone/iPad en Firefox ondersteunen het niet.
+
+### Op de Synology (Container Manager)
+
+Bij elke push naar `main` bouwt GitHub Actions een image voor Intel en ARM:
+`ghcr.io/tijmenbruggeman/pukk-app:latest`.
+
+1. Container Manager › Project › Maken, en plak
+   [app/compose.yaml](app/compose.yaml). Zet `PUKK_PASSWORD` op een eigen
+   wachtwoord.
+2. DSM › Configuratiescherm › Aanmeldingsportaal › Geavanceerd ›
+   Reverse proxy: een https-regel naar `localhost:8080`, met je certificaat.
+3. Bijwerken: in het project op "Image ophalen" en opnieuw starten (of
+   `docker compose pull && docker compose up -d`).
+
+De data (SQLite-database en het sleutelbestand voor sessies) staat in het
+volume `pukk-data`. Wachtwoord wijzigen logt iedereen uit.
+
+### Lokaal draaien
+
+Node 24 is nodig.
+
+```bash
+cd app && npm install
+```
+
+Ontwikkelen (Vite met hot reload op http://localhost:5173, API op poort 8787,
+wachtwoord `dev`):
+
+```bash
+npm run dev:server
+```
+
+```bash
+npm run dev
+```
+
+De productieversie lokaal (http://localhost:8080):
+
+```bash
+npm run build && PUKK_PASSWORD=test npm start
+```
+
+Tests en typecheck:
+
+```bash
+npm test && npm run typecheck
+```
+
+De pack-tests vergelijken de bytes van de app met `tools/pukk.py`, dus
+`python3` moet beschikbaar zijn.
+
+## Packs maken en uploaden (zonder app)
 
 Een pack is een JSON-bestand, zie [packs/voorbeeld.json](packs/voorbeeld.json)
 en [docs/PACKS.md](docs/PACKS.md). Tekst mag Latin-1 bevatten (é, ë, ü, ç,
@@ -216,6 +282,8 @@ components/ui/assets/ gegenereerde fonts en vormen (tools/assets/)
 components/ble/       NimBLE GATT-service en uploadprotocol
 components/storage/   LittleFS-partitie "packs" op /packs
 components/packs/     .pukk-formaat (reader) en packopslag
+app/                  web-app: editor, server (Hono + SQLite), Web Bluetooth
+app/compose.yaml      deployment voor Docker Compose / Synology
 tools/pukk.py         packs bouwen en via BLE beheren
 tools/preview/        UI renderen op de Mac (PNG per scherm)
 tools/assets/         fonts en vormen opnieuw genereren

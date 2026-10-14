@@ -310,11 +310,64 @@ Een met `esptool merge_bin` samengevoegde image vult gaten op met `0xFF` en
 wist daarmee de NVS (o.a. RF-kalibratie, straks instellingen). Flash daarom
 de losse bestanden met `flash_args`, zoals `idf.py flash` doet.
 
+## Fase 3: web-app
+
+### Keuzes
+
+- **Web-app** met Web Bluetooth: geen installatie, werkt in Chrome/Edge op
+  computer en Android. Niet op iPhone (Safari heeft geen Web Bluetooth);
+  daarvoor zou later een native app nodig zijn.
+- **Online opslag, zelf gehost**: één container (Node 24) met de gebouwde
+  frontend en een API, SQLite (`node:sqlite`, ingebouwd in Node 24) in een
+  volume. Draait via Docker Compose op de Synology achter de bestaande
+  reverse proxy (https, nodig voor Web Bluetooth).
+- **Eén wachtwoord** uit `PUKK_PASSWORD`. Sessie = ondertekende cookie
+  (`HttpOnly`, `Secure`, `SameSite=Strict`, 30 dagen) met de wachtwoordhash in
+  de handtekening, zodat een nieuw wachtwoord alle sessies ongeldig maakt.
+  Maximaal 10 foute pogingen per minuut (voor iedereen samen).
+- **Image via GitHub Actions** naar `ghcr.io/tijmenbruggeman/pukk-app`
+  (amd64 + arm64). De bouwstap draait op het platform van de builder; de
+  runtime-stap kopieert alleen bestanden, dus geen emulatie nodig.
+- Stack: React 19 + Vite 8 (frontend), Hono 4 (server), TypeScript 7,
+  Vitest 5. Versies vastgezet op releases van minstens twee weken oud.
+
+### Gedeelde packcode
+
+`app/src/shared/pack.ts` doet in TypeScript wat `tools/pukk.py` doet:
+dezelfde regels (limieten, tekenset, vervangingen) en dezelfde encoder. Een
+test bouwt het voorbeeldpack en een pack van 1000 vragen met beide en eist
+identieke bytes. De browser gebruikt de code voor validatie per veld en om
+het `.pukk`-bestand te maken; de server alleen voor de "geldig"-vlag.
+
+### Concepten
+
+Opslaan kan altijd, ook als een pack nog niet af is; de server controleert
+alleen de vorm (en maxima) en markeert ongeldige packs als concept. Pushen
+naar een Pukk kan pas als er geen fouten meer zijn.
+
+Elk pack heeft een unieke **naam op de Pukk** (bestandsnaam,
+`a-z0-9_-`), afgeleid van de titel bij het aanmaken (`-2`, `-3` bij
+dubbelingen) en daarna vast, zodat een titelwijziging het pack op de Pukk
+vervangt in plaats van een tweede aan te maken.
+
+### Bluetooth in de browser
+
+- Het protocol (`app/src/client/ble/protocol.ts`) is dezelfde
+  vensterlogica als `tools/pukk.py` en los van Web Bluetooth getest tegen
+  een gesimuleerde Pukk (`sim.ts`, dezelfde regels als `protocol.c`) die
+  writes kwijtraakt, data beschadigt of stil valt.
+- Web Bluetooth staat per apparaat maar één GATT-operatie tegelijk toe; de
+  adapter zet ze in een rij.
+- Meerdere Pukks tegelijk verbonden (al nodig voor de battle-modus).
+- De browser laat je een Pukk kiezen in zijn eigen venster; je hoeft dat
+  per sessie één keer te doen.
+
 ## Roadmap
 
-- Fase 3/4: app die met de apparaten verbindt (gebruikt het protocol uit
-  [PACKS.md](PACKS.md)).
-- Geluid (ES8311 + speaker) bij goed/fout/tijd.
+- **Fase 4: battle-modus.** Twee Pukks spelen dezelfde quiz tegelijk. De
+  app kan al met meerdere Pukks verbinden; open is wie de quiz leidt (de app
+  of één van de Pukks) en hoe de vragen gelijk lopen.
+- **Fase 5: geluid.** ES8311 + speaker bij goed, fout en tijd.
 
 ## Geheugen: statisch (uit `idf.py size`)
 
@@ -344,10 +397,9 @@ opstarten vrijgeeft niet mee.
    het eerste LVGL-frame. Als er kort ruis zichtbaar is: helderheid 0 tot het
    eerste frame.
 3. **Uploadsnelheid.** ~4,5 KB/s vanaf de Mac met bleak, terwijl link en
-   apparaat veel meer aankunnen. Bij de app meten met native
-   CoreBluetooth/Android-API's.
+   apparaat veel meer aankunnen. Meten met de web-app (Chrome).
 4. **BLE-beveiliging.** Nu kan iedereen in de buurt packs uploaden en
-   verwijderen. Pairing/bonding toevoegen voor de app er is?
+   verwijderen. Pairing/bonding toevoegen?
 5. **Firmware-update via BLE.** Willen we OTA? De partitietabel houdt er
    rekening mee.
 6. **Packs op SD-kaart?** De TF-slot deelt de SPI-bus met het scherm; kan,
