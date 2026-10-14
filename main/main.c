@@ -12,6 +12,8 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "board.h"
+#include "pukk_ble.h"
+#include "storage.h"
 #include "ui.h"
 
 static const char *TAG = "pukk";
@@ -97,6 +99,12 @@ void app_main(void)
 
     ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
     log_heap("buttons");
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(storage_init());
+    log_heap("storage");
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init());
+    log_heap("ble");
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
