@@ -37,6 +37,7 @@ typedef struct {
     char title[PACK_TITLE_MAX + 1];
     uint32_t size;
     uint16_t question_count;
+    uint32_t crc32;     /* from the header: identifies the pack's contents */
 } packs_entry_t;
 
 /* Remove leftovers of an interrupted upload and log the packs found.
@@ -56,6 +57,12 @@ packs_err_t packs_info(const char *name, packs_entry_t *info);
 packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_t *question);
 
 packs_err_t packs_delete(const char *name);
+
+/* The pack file as is, for sending it to another Pukk. */
+typedef struct packs_file packs_file_t;
+packs_err_t packs_file_open(const char *name, packs_file_t **file, uint32_t *size);
+packs_err_t packs_file_read(packs_file_t *file, uint32_t offset, void *buf, uint32_t len);
+void packs_file_close(packs_file_t *file);
 
 /* Upload: data goes to a temporary file and only replaces /packs/<name>.pukk
  * after size, CRC and format have been checked. */

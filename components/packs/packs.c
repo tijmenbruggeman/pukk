@@ -165,6 +165,7 @@ static packs_err_t read_info(const char *path, packs_entry_t *info, bool verify)
     }
     info->size = pack.file_size;
     info->question_count = pack.question_count;
+    info->crc32 = pack.crc32;
     err = map_pack_err(pack_read_title(&pack, info->title, sizeof(info->title)));
     if (err == PACKS_OK && verify) {
         err = map_pack_err(pack_verify(&pack));
@@ -251,6 +252,49 @@ packs_err_t packs_delete(const char *name)
     }
     ESP_LOGI(TAG, "deleted %s", name);
     return PACKS_OK;
+}
+
+struct packs_file {
+    int fd;
+};
+
+packs_err_t packs_file_open(const char *name, packs_file_t **file, uint32_t *size)
+{
+    if (!packs_name_valid(name, strlen(name))) {
+        return PACKS_ERR_INVALID_ARG;
+    }
+    char path[PATH_LEN];
+    pack_path(path, name);
+    struct stat st;
+    if (stat(path, &st) != 0) {
+        return PACKS_ERR_NOT_FOUND;
+    }
+    packs_file_t *f = malloc(sizeof(*f));
+    if (!f) {
+        return PACKS_ERR_IO;
+    }
+    f->fd = open(path, O_RDONLY);
+    if (f->fd < 0) {
+        free(f);
+        return PACKS_ERR_IO;
+    }
+    *file = f;
+    *size = (uint32_t)st.st_size;
+    return PACKS_OK;
+}
+
+packs_err_t packs_file_read(packs_file_t *file, uint32_t offset, void *buf, uint32_t len)
+{
+    uint32_t got;
+    return read_at(file->fd, offset, buf, len, &got) && got == len ? PACKS_OK : PACKS_ERR_IO;
+}
+
+void packs_file_close(packs_file_t *file)
+{
+    if (file) {
+        close(file->fd);
+        free(file);
+    }
 }
 
 packs_err_t packs_upload_begin(const char *name, uint32_t size, uint32_t crc32)

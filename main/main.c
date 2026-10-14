@@ -11,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "battle.h"
 #include "board.h"
 #include "packs.h"
 #include "pukk_ble.h"
@@ -68,9 +69,16 @@ static void update_battery(void)
     }
 }
 
+/* Runs in the battle task. */
+static void on_battle_event(const battle_event_t *event, void *ctx)
+{
+    ESP_LOGI(TAG, "battle event %d", event->type);
+}
+
 /* Runs in the NimBLE host task. */
 static void on_ble_event(const pukk_ble_event_t *event, void *ctx)
 {
+    battle_ble_event(event);
     switch (event->type) {
     case PUKK_BLE_EVENT_READY:
         ui_set_device_name(pukk_ble_device_name());
@@ -101,11 +109,13 @@ static void log_status(void)
     board_pmu_log_status();
     update_battery();
     TaskHandle_t ble_host = xTaskGetHandle("nimble_host");
-    ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u, ble %u",
+    TaskHandle_t battle = xTaskGetHandle("battle");
+    ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u, ble %u, battle %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)ui_task_stack_free(),
-             ble_host ? (unsigned)uxTaskGetStackHighWaterMark(ble_host) : 0);
+             ble_host ? (unsigned)uxTaskGetStackHighWaterMark(ble_host) : 0,
+             battle ? (unsigned)uxTaskGetStackHighWaterMark(battle) : 0);
 }
 
 void app_main(void)
@@ -147,6 +157,7 @@ void app_main(void)
     ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
     log_heap("buttons");
 
+    ESP_ERROR_CHECK_WITHOUT_ABORT(battle_init(on_battle_event, NULL));
     ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init(on_ble_event, NULL));
     log_heap("ble");
 
