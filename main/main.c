@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "board.h"
+#include "packs.h"
 #include "pukk_ble.h"
 #include "storage.h"
 #include "ui.h"
@@ -100,7 +101,9 @@ void app_main(void)
     ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
     log_heap("buttons");
 
-    ESP_ERROR_CHECK_WITHOUT_ABORT(storage_init());
+    if (ESP_ERROR_CHECK_WITHOUT_ABORT(storage_init()) == ESP_OK) {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(packs_init());
+    }
     log_heap("storage");
 
     ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init());
