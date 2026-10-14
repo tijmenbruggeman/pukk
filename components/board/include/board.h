@@ -10,6 +10,7 @@
 #include "board_pmu.h"
 #include "board_display.h"
 #include "board_touch.h"
+#include "board_buttons.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -48,6 +48,13 @@ static void init_nvs(void)
     ESP_ERROR_CHECK(err);
 }
 
+static void on_button(board_button_t button, void *ctx)
+{
+    if (button == BOARD_BUTTON_KEY) {
+        ui_quiz_restart();
+    }
+}
+
 static void log_status(void)
 {
     board_pmu_log_status();
@@ -66,6 +73,9 @@ void app_main(void)
     init_nvs();
     log_heap("nvs");
 
+    /* PMU and display are essential; the steps after them log an error and
+     * carry on, so a failing peripheral does not cause a reboot loop. */
+
     /* The PMU must come first: it powers and resets the display. */
     ESP_LOGI(TAG, "board: %s", board_name());
     ESP_ERROR_CHECK(board_i2c_init());
@@ -76,7 +86,7 @@ void app_main(void)
     ESP_ERROR_CHECK(board_display_init());
     log_heap("display");
 
-    ESP_ERROR_CHECK(board_touch_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(board_touch_init());
     log_heap("touch");
 
     ESP_ERROR_CHECK(ui_init());
@@ -84,6 +94,9 @@ void app_main(void)
 
     ui_quiz_show();
     log_heap("ui");
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
+    log_heap("buttons");
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
