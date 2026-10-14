@@ -56,8 +56,8 @@ de hardware geverifieerd is.
 6. **Touch-chip.** Waveshare gebruikt de driver
    `waveshare/esp_lcd_touch_cst9217`; het bord heeft een CST9220. Geverifieerd:
    de driver werkt en logt `Chip Type: 0x9220`, resolutie 480×480.
-7. **"KEY"-knop.** Op de silkscreen heten de knoppen BOOT, PWR en IO10. We
-   nemen aan dat KEY = IO10 (GPIO10).
+7. **"KEY"-knop.** Op de silkscreen heten de knoppen BOOT, PWR en IO10.
+   KEY = IO10 (GPIO10); geverifieerd op board 1.
 
 ## Beslissingen
 
@@ -188,20 +188,17 @@ opstarten vrijgeeft niet mee.
    de meting staat uit zoals in de demo's; daarmee is er waarschijnlijk geen
    temperatuurbewaking tijdens laden. Uitzoeken of we die aan willen zetten
    (registers 0x30 bit 1 en 0x50).
-2. **Oriëntatie scherm/touch.** Op hardware controleren of tikken op elke
-   knop de juiste knop raakt; anders `BOARD_TOUCH_*` in `board_config.h`
-   aanpassen.
-3. **Rommel bij opstarten?** De init-sequentie zet het scherm aan (0x29) vóór
+2. **Rommel bij opstarten?** De init-sequentie zet het scherm aan (0x29) vóór
    het eerste LVGL-frame. Als er kort ruis zichtbaar is: helderheid 0 tot het
    eerste frame.
-4. **BLE-beveiliging.** Moet packoverdracht later met pairing/bonding?
-5. **Firmware-update via BLE.** Willen we OTA? De partitietabel houdt er
+3. **BLE-beveiliging.** Moet packoverdracht later met pairing/bonding?
+4. **Firmware-update via BLE.** Willen we OTA? De partitietabel houdt er
    rekening mee.
-6. **Packs op SD-kaart?** De TF-slot deelt de SPI-bus met het scherm; kan,
+5. **Packs op SD-kaart?** De TF-slot deelt de SPI-bus met het scherm; kan,
    maar SD-verkeer en schermupdates moeten dan om de bus delen.
-7. **LVGL-heap.** 64 KB is een gok; bijstellen met de memory monitor.
-8. **S3-variant.** Welk bord precies? Met PSRAM gelden andere geheugenkeuzes.
-9. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
+6. **LVGL-heap.** 64 KB is een gok; bijstellen met de memory monitor.
+7. **S3-variant.** Welk bord precies? Met PSRAM gelden andere geheugenkeuzes.
+8. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
    Latin-1 genereren (lv_font_conv).
 
 ## Geheugen bij boot (gemeten)
@@ -244,6 +241,8 @@ Overige observaties uit dezelfde boot:
 - Scherm-init duurt ~1 s: 300 ms ALDO3-reset plus 600 ms na sleep-out (de
   waarden uit de Waveshare-sequentie).
 - Timer: na 15 s verschijnt "Tijd is om!".
+- Handmatig getest en in orde: touch raakt de juiste knoppen (oriëntatie uit
+  de Waveshare-demo klopt), IO10 start de vraag opnieuw, BLE-verbinding.
 - BLE-naam van board 1: `Pukk-EA66` (MAC `d4:05:92:b8:ea:66`).
 - `E esp_core_dump_flash: Incorrect size of core dump image`: de
   coredump-partitie bevat nog resten van de vorige (Waveshare-)firmware. Eén
