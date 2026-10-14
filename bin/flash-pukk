@@ -1,0 +1,232 @@
+#!/usr/bin/env bash
+# Flash Pukk firmware onto boards connected over USB.
+#
+#   bin/flash-pukk             pick firmware and board(s) interactively
+#   bin/flash-pukk -d DIR      firmware from DIR (a build dir with flash_args)
+#   bin/flash-pukk -p PORT     use this serial port, skip the search
+#   bin/flash-pukk -y          no questions: newest firmware, every Pukk found
+#
+# Firmware is looked up in build/ (idf.py build) and build-flash/*/. Only the
+# bootloader, partition table, OTA data and app are written, so settings (NVS)
+# and packs stay. The coredump partition is cleared: a dump from the previous
+# firmware is of no use with the new one.
+#
+# Needs esptool 5 (brew install esptool) or esptool.py from ESP-IDF.
+set -eo pipefail
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+BAUD=460800
+
+die() {
+    echo "fout: $*" >&2
+    exit 1
+}
+
+usage() {
+    sed -n '2,/^$/s/^# \{0,1\}//p' "$0"
+    exit "${1:-0}"
+}
+
+FW_DIR=""
+PORT=""
+YES=0
+while getopts "d:p:yh" opt; do
+    case $opt in
+        d) FW_DIR=$OPTARG ;;
+        p) PORT=$OPTARG ;;
+        y) YES=1 ;;
+        h) usage 0 ;;
+        *) usage 1 ;;
+    esac
+done
+
+# esptool 5 uses dashes in commands and options, esptool.py 4 underscores.
+if command -v esptool >/dev/null 2>&1; then
+    ESPTOOL=esptool
+    CMD_FLASH=write-flash
+    CMD_MAC=read-mac
+    DASHES=1
+elif command -v esptool.py >/dev/null 2>&1; then
+    ESPTOOL=esptool.py
+    CMD_FLASH=write_flash
+    CMD_MAC=read_mac
+    DASHES=0
+else
+    die "esptool niet gevonden. Installeer het met: brew install esptool"
+fi
+
+ask() { # ask "question" default -> answer in $REPLY
+    if [ "$YES" = 1 ]; then
+        REPLY=$2
+        return
+    fi
+    read -r -p "$1 [$2]: " REPLY
+    REPLY=${REPLY:-$2}
+}
+
+# --- firmware ----------------------------------------------------------------
+
+app_bin() { # the app image listed in a flash_args file
+    grep -E '^0x[0-9a-fA-F]+ ' "$1/flash_args" |
+        grep -v -E 'bootloader|partition|ota_data' | awk '{print $2}' | tail -1
+}
+
+app_version() { # version string from the app's esp_app_desc_t
+    local bin=$1
+    if [ "$(od -An -tx1 -j32 -N4 "$bin" | tr -d ' \n')" = "3254cdab" ]; then
+        dd if="$bin" bs=1 skip=48 count=32 2>/dev/null | tr -d '\0'
+    else
+        echo "?"
+    fi
+}
+
+mtime() {
+    if stat --version >/dev/null 2>&1; then
+        date -d "@$(stat -c %Y "$1")" '+%Y-%m-%d %H:%M'
+    else
+        stat -f %Sm -t '%Y-%m-%d %H:%M' "$1"
+    fi
+}
+
+FW_DIRS=()
+if [ -n "$FW_DIR" ]; then
+    [ -f "$FW_DIR/flash_args" ] || die "$FW_DIR bevat geen flash_args"
+    FW_DIRS=("$(cd "$FW_DIR" && pwd)")
+else
+    # Newest first.
+    for d in $(ls -dt "$ROOT"/build "$ROOT"/build-flash/*/ 2>/dev/null); do
+        d=${d%/}
+        [ -f "$d/flash_args" ] && [ -f "$d/$(app_bin "$d")" ] && FW_DIRS+=("$d")
+    done
+fi
+[ ${#FW_DIRS[@]} -gt 0 ] || die "geen firmware gevonden. Bouw eerst met idf.py build (zie README) of geef een map op met -d."
+
+echo "Firmware:"
+for i in "${!FW_DIRS[@]}"; do
+    d=${FW_DIRS[$i]}
+    bin="$d/$(app_bin "$d")"
+    printf "  %d) pukk %-8s %-24s %s\n" $((i + 1)) "$(app_version "$bin")" "${d#"$ROOT"/}" "$(mtime "$bin")"
+done
+if [ ${#FW_DIRS[@]} -gt 1 ]; then
+    ask "Welke firmware?" 1
+else
+    REPLY=1
+fi
+case $REPLY in
+    ''|*[!0-9]*) die "ongeldige keuze: $REPLY" ;;
+esac
+[ "$REPLY" -ge 1 ] && [ "$REPLY" -le ${#FW_DIRS[@]} ] || die "ongeldige keuze: $REPLY"
+FW=${FW_DIRS[$((REPLY - 1))]}
+VERSION=$(app_version "$FW/$(app_bin "$FW")")
+echo
+
+# --- boards ------------------------------------------------------------------
+
+candidate_ports() {
+    shopt -s nullglob
+    local p
+    for p in /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.wchusbserial* /dev/cu.SLAB_USBtoUART* \
+             /dev/ttyACM* /dev/ttyUSB*; do
+        echo "$p"
+    done
+}
+
+# Pukk-XXXX: the BLE address is the base MAC + 2 (ESP32-C6); see pukk_ble.c.
+pukk_name() {
+    local hex
+    hex=$(echo "$1" | awk -F: '{print $(NF-1) $NF}')
+    printf 'Pukk-%04X' $(((0x$hex + 2) & 0xFFFF))
+}
+
+PORTS=()
+NAMES=()
+if [ -n "$PORT" ]; then
+    PORTS=("$PORT")
+    NAMES=("$PORT")
+else
+    echo "Zoeken naar Pukks…"
+    for p in $(candidate_ports); do
+        out=$("$ESPTOOL" --port "$p" --connect-attempts 2 $CMD_MAC 2>&1) || {
+            echo "  $p: geen ESP32 of bezet (draait er een monitor?)"
+            continue
+        }
+        chip=$(printf '%s\n' "$out" | sed -n 's/^Detecting chip type\.\.\. *//p' | head -1)
+        mac=$(printf '%s\n' "$out" | sed -n 's/^BASE MAC: *//p' | head -1)
+        [ -n "$mac" ] || mac=$(printf '%s\n' "$out" | sed -n 's/^MAC: *//p' | head -1)
+        if [ "$chip" != "ESP32-C6" ]; then
+            echo "  $p: $chip, geen Pukk-bord (ESP32-C6) — overgeslagen"
+            continue
+        fi
+        PORTS+=("$p")
+        NAMES+=("$(pukk_name "$mac")")
+    done
+fi
+[ ${#PORTS[@]} -gt 0 ] || die "geen Pukk gevonden. Zit hij aan USB? Lukt het niet: houd BOOT ingedrukt, haal de kabel eruit en weer erin."
+
+echo "Gevonden:"
+for i in "${!PORTS[@]}"; do
+    printf "  %d) %-10s %s\n" $((i + 1)) "${NAMES[$i]}" "${PORTS[$i]}"
+done
+[ ${#PORTS[@]} -gt 1 ] && echo "  a) alle"
+default=1
+[ ${#PORTS[@]} -gt 1 ] && [ "$YES" = 1 ] && default=a
+if [ ${#PORTS[@]} -gt 1 ] || [ -z "$PORT" ]; then
+    ask "Welke flashen?" $default
+else
+    REPLY=1
+fi
+SELECTED=()
+if [ "$REPLY" = a ] || [ "$REPLY" = A ]; then
+    SELECTED=("${!PORTS[@]}")
+else
+    case $REPLY in
+        ''|*[!0-9]*) die "ongeldige keuze: $REPLY" ;;
+    esac
+    [ "$REPLY" -ge 1 ] && [ "$REPLY" -le ${#PORTS[@]} ] || die "ongeldige keuze: $REPLY"
+    SELECTED=($((REPLY - 1)))
+fi
+
+targets=""
+for i in "${SELECTED[@]}"; do
+    targets="$targets ${NAMES[$i]}"
+done
+ask "pukk $VERSION flashen naar$targets? (j/n)" j
+case $REPLY in
+    j|J|y|Y|ja|yes) ;;
+    *) echo "Afgebroken."; exit 0 ;;
+esac
+
+# --- flash -------------------------------------------------------------------
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+ARGS="$TMP/flash_args"
+if [ "$DASHES" = 1 ]; then
+    sed -e 's/--flash_mode/--flash-mode/' -e 's/--flash_freq/--flash-freq/' \
+        -e 's/--flash_size/--flash-size/' "$FW/flash_args" > "$ARGS"
+else
+    cp "$FW/flash_args" "$ARGS"
+fi
+
+# Clear the coredump partition by writing 0xFF over it in the same run.
+read -r CD_OFFSET CD_SIZE <<EOF
+$(awk -F, '$1 ~ /^[ \t]*coredump/ {gsub(/[ \t]/, ""); print $4, $5}' "$ROOT/partitions.csv")
+EOF
+if [ -n "$CD_OFFSET" ] && [ -n "$CD_SIZE" ]; then
+    head -c $((CD_SIZE)) /dev/zero | LC_ALL=C tr '\0' '\377' > "$TMP/coredump-empty.bin"
+    echo "$CD_OFFSET $TMP/coredump-empty.bin" >> "$ARGS"
+fi
+
+failed=0
+for i in "${SELECTED[@]}"; do
+    echo
+    echo "== ${NAMES[$i]} (${PORTS[$i]})"
+    if (cd "$FW" && "$ESPTOOL" --chip esp32c6 --port "${PORTS[$i]}" --baud $BAUD $CMD_FLASH "@$ARGS"); then
+        echo "== ${NAMES[$i]} draait nu pukk $VERSION"
+    else
+        echo "== ${NAMES[$i]}: flashen mislukt" >&2
+        failed=1
+    fi
+done
+exit $failed

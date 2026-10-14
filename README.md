@@ -108,6 +108,15 @@ ls /dev/cu.usbmodem*
 idf.py -p /dev/cu.usbmodem1101 flash monitor
 ```
 
+Alleen flashen, zonder ESP-IDF (alleen esptool nodig: `brew install
+esptool`): het script zoekt firmware in `build/` en `build-flash/*/`, toont
+de versie, zoekt aangesloten Pukks (met hun Bluetooth-naam) en flasht er een
+of allemaal. Settings en packs blijven staan.
+
+```bash
+bin/flash-pukk
+```
+
 Stoppen met monitoren: `Ctrl+]`. Een crashdump lezen na een reboot:
 
 ```bash
@@ -284,6 +293,7 @@ components/storage/   LittleFS-partitie "packs" op /packs
 components/packs/     .pukk-formaat (reader) en packopslag
 app/                  web-app: editor, server (Hono + SQLite), Web Bluetooth
 app/compose.yaml      deployment voor Docker Compose / Synology
+bin/flash-pukk        firmware flashen, met keuze uit gevonden Pukks
 tools/pukk.py         packs bouwen en via BLE beheren
 tools/preview/        UI renderen op de Mac (PNG per scherm)
 tools/assets/         fonts en vormen opnieuw genereren
