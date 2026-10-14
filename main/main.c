@@ -60,10 +60,10 @@ static void on_button(board_button_t button, void *ctx)
 static void log_status(void)
 {
     board_pmu_log_status();
-    ESP_LOGI(TAG, "status: heap free %u, min ever %u, lvgl stack unused %u",
+    ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)ui_task_stack_free());
+             (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)ui_task_stack_free());
 }
 
 void app_main(void)

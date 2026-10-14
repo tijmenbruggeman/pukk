@@ -14,6 +14,9 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 #
 CONFIG_COMPILER_OPTIMIZATION_PERF=y
 CONFIG_FREERTOS_HZ=1000
+# app_main builds the first screen, formats LittleFS on first boot and starts
+# NimBLE; the 3.5 KB default is tight for that. Unused stack is logged.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
 # The board's USB-C port is the C6's built-in USB Serial/JTAG.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # Crash dumps go to the "coredump" partition; read with `idf.py coredump-info`.
