@@ -10,3 +10,6 @@ sdkconfig.old
 .idea/
 .cache/
 .DS_Store
+
+# Built packs (generate with tools/pukk.py build)
+*.pukk

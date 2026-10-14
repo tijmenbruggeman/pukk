@@ -1,0 +1,47 @@
+{
+  "title": "Voorbeeld",
+  "questions": [
+    {
+      "question": "Welke planeet staat het dichtst bij de zon?",
+      "answers": ["Venus", "Mercurius", "Mars", "Aarde"],
+      "correct": 1
+    },
+    {
+      "question": "Hoeveel provincies heeft Nederland?",
+      "answers": ["10", "11", "12", "13"],
+      "correct": 2
+    },
+    {
+      "question": "Wat is de hoofdstad van België?",
+      "answers": ["Antwerpen", "Brussel", "Gent", "Luik"],
+      "correct": 1
+    },
+    {
+      "question": "Is een tomaat botanisch gezien een vrucht?",
+      "answers": ["Ja", "Nee"],
+      "correct": 0,
+      "time": 10
+    },
+    {
+      "question": "Welk element heeft het symbool O?",
+      "answers": ["Goud", "Zuurstof", "Osmium"],
+      "correct": 1
+    },
+    {
+      "question": "In welk jaar viel de Berlijnse Muur?",
+      "answers": ["1987", "1989", "1991", "1993"],
+      "correct": 1
+    },
+    {
+      "question": "Hoeveel poten heeft een spin?",
+      "answers": ["6", "8", "10", "12"],
+      "correct": 1,
+      "time": 10
+    },
+    {
+      "question": "Welke rivier stroomt door Nijmegen?",
+      "answers": ["Maas", "IJssel", "Waal", "Rijn"],
+      "correct": 2
+    }
+  ]
+}
