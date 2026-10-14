@@ -1,8 +1,8 @@
 idf_component_register(
-    SRCS "lvgl_port.c" "quiz_screen.c"
+    SRCS "lvgl_port.c" "ui.c" "screen_home.c" "screen_game.c" "upload_overlay.c"
     INCLUDE_DIRS "include"
     REQUIRES board
-    PRIV_REQUIRES esp_timer
+    PRIV_REQUIRES esp_timer packs ble
 )
 
 # Make LVGL's performance monitor report whole-system CPU load instead of

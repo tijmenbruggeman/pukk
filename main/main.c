@@ -54,7 +54,29 @@ static void init_nvs(void)
 static void on_button(board_button_t button, void *ctx)
 {
     if (button == BOARD_BUTTON_KEY) {
-        ui_quiz_restart();
+        ui_back();
+    }
+}
+
+/* Runs in the NimBLE host task. */
+static void on_ble_event(const pukk_ble_event_t *event, void *ctx)
+{
+    switch (event->type) {
+    case PUKK_BLE_EVENT_READY:
+        ui_set_device_name(pukk_ble_device_name());
+        break;
+    case PUKK_BLE_EVENT_UPLOAD_STARTED:
+    case PUKK_BLE_EVENT_UPLOAD_PROGRESS:
+        ui_upload_progress(event->name, event->received, event->total);
+        break;
+    case PUKK_BLE_EVENT_UPLOAD_FINISHED:
+        ui_upload_finished(event->name, event->result);
+        break;
+    case PUKK_BLE_EVENT_PACKS_CHANGED:
+        ui_packs_changed();
+        break;
+    default:
+        break;
     }
 }
 
@@ -94,21 +116,22 @@ void app_main(void)
     ESP_ERROR_CHECK_WITHOUT_ABORT(board_touch_init());
     log_heap("touch");
 
-    ESP_ERROR_CHECK(ui_init());
-    log_heap("lvgl");
-
-    ui_quiz_show();
-    log_heap("ui");
-
-    ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
-    log_heap("buttons");
-
+    /* Packs must be readable before the UI shows the pack list. */
     if (ESP_ERROR_CHECK_WITHOUT_ABORT(storage_init()) == ESP_OK) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(packs_init());
     }
     log_heap("storage");
 
-    ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init(NULL, NULL));
+    ESP_ERROR_CHECK(ui_init());
+    log_heap("lvgl");
+
+    ui_show_home();
+    log_heap("ui");
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
+    log_heap("buttons");
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init(on_ble_event, NULL));
     log_heap("ble");
 
     for (;;) {

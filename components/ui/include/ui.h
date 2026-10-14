@@ -10,6 +10,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include "esp_err.h"
 
 #ifdef __cplusplus
@@ -27,9 +28,21 @@ void ui_unlock(void);
 /* Smallest amount of LVGL task stack that has stayed unused, in bytes. */
 size_t ui_task_stack_free(void);
 
-/* Phase 0 test screen: one question, four answers, 15 s timer bar. */
-void ui_quiz_show(void);
-void ui_quiz_restart(void);
+/* Show the pack list. */
+void ui_show_home(void);
+
+/* KEY button: leave a game and return to the pack list. */
+void ui_back(void);
+
+/* BLE name shown on the pack list, so you know where to upload to. */
+void ui_set_device_name(const char *name);
+
+/* Reload the pack list after an upload or delete. */
+void ui_packs_changed(void);
+
+/* Upload pop-up. `result` is 0 on success, else a pukk_ble result code. */
+void ui_upload_progress(const char *name, uint32_t received, uint32_t total);
+void ui_upload_finished(const char *name, int result);
 
 #ifdef __cplusplus
 }
