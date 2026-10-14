@@ -170,7 +170,7 @@ tools/test_host.sh
 | Service | `8e410001-0580-4871-83bd-51273ef66407` | |
 | CTRL | `8e410002-0580-4871-83bd-51273ef66407` | write, notify: verzoeken en antwoorden |
 | DATA | `8e410003-0580-4871-83bd-51273ef66407` | write without response: uploaddata |
-| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.1.0","flash_total":…,"flash_free":…}` |
+| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.2.0","flash_total":…,"flash_free":…}` |
 | PACKS | `8e410005-0580-4871-83bd-51273ef66407` | read: JSON-lijst van de packs |
 
 Het protocol staat in [docs/PACKS.md](docs/PACKS.md). INFO en PACKS kun je ook
