@@ -1,0 +1,335 @@
+{
+  "title": "Tafels van 1 t/m 10",
+  "questions": [
+    {
+      "question": "Hoeveel is 6 × 7?",
+      "answers": [
+        "48",
+        "49",
+        "42",
+        "24"
+      ],
+      "correct": 2,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 3 × 9?",
+      "answers": [
+        "36",
+        "27",
+        "30",
+        "24"
+      ],
+      "correct": 1,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 3 × 7?",
+      "answers": [
+        "24",
+        "12",
+        "28",
+        "21"
+      ],
+      "correct": 3,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 9 × 9?",
+      "answers": [
+        "72",
+        "90",
+        "18",
+        "81"
+      ],
+      "correct": 3,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 7 × 4?",
+      "answers": [
+        "82",
+        "28",
+        "21",
+        "35"
+      ],
+      "correct": 1,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 7 × 8?",
+      "answers": [
+        "65",
+        "64",
+        "49",
+        "56"
+      ],
+      "correct": 3,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 2 × 9?",
+      "answers": [
+        "18",
+        "16",
+        "81",
+        "27"
+      ],
+      "correct": 0,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 5 × 7?",
+      "answers": [
+        "30",
+        "42",
+        "35",
+        "40"
+      ],
+      "correct": 2,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 6 × 10?",
+      "answers": [
+        "70",
+        "50",
+        "60",
+        "54"
+      ],
+      "correct": 2,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 6 × 5?",
+      "answers": [
+        "35",
+        "24",
+        "36",
+        "30"
+      ],
+      "correct": 3,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 8 × 2?",
+      "answers": [
+        "24",
+        "8",
+        "16",
+        "61"
+      ],
+      "correct": 2,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 1 × 3?",
+      "answers": [
+        "3",
+        "6",
+        "2",
+        "5"
+      ],
+      "correct": 0,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 8 × 4?",
+      "answers": [
+        "36",
+        "32",
+        "23",
+        "24"
+      ],
+      "correct": 1,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 7 × 1?",
+      "answers": [
+        "8",
+        "9",
+        "6",
+        "7"
+      ],
+      "correct": 3,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 1 × 6?",
+      "answers": [
+        "6",
+        "5",
+        "12",
+        "7"
+      ],
+      "correct": 0,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 5 × 5?",
+      "answers": [
+        "30",
+        "25",
+        "20",
+        "52"
+      ],
+      "correct": 1,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 10 × 8?",
+      "answers": [
+        "70",
+        "72",
+        "90",
+        "80"
+      ],
+      "correct": 3,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 6 × 8?",
+      "answers": [
+        "54",
+        "42",
+        "48",
+        "56"
+      ],
+      "correct": 2,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 7 × 2?",
+      "answers": [
+        "7",
+        "16",
+        "21",
+        "14"
+      ],
+      "correct": 3,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 10 × 2?",
+      "answers": [
+        "22",
+        "30",
+        "18",
+        "20"
+      ],
+      "correct": 3,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 10 × 10?",
+      "answers": [
+        "90",
+        "110",
+        "100",
+        "99"
+      ],
+      "correct": 2,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 5 × 3?",
+      "answers": [
+        "15",
+        "10",
+        "18",
+        "51"
+      ],
+      "correct": 0,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 5 × 10?",
+      "answers": [
+        "40",
+        "50",
+        "60",
+        "45"
+      ],
+      "correct": 1,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 4 × 10?",
+      "answers": [
+        "40",
+        "50",
+        "36",
+        "44"
+      ],
+      "correct": 0,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 10 × 9?",
+      "answers": [
+        "99",
+        "80",
+        "100",
+        "90"
+      ],
+      "correct": 3,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 3 × 10?",
+      "answers": [
+        "33",
+        "27",
+        "20",
+        "30"
+      ],
+      "correct": 3,
+      "time": 10
+    },
+    {
+      "question": "Hoeveel is 8 × 8?",
+      "answers": [
+        "65",
+        "64",
+        "56",
+        "46"
+      ],
+      "correct": 1,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 10 × 7?",
+      "answers": [
+        "63",
+        "70",
+        "77",
+        "80"
+      ],
+      "correct": 1,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 7 × 9?",
+      "answers": [
+        "56",
+        "63",
+        "36",
+        "72"
+      ],
+      "correct": 1,
+      "time": 15
+    },
+    {
+      "question": "Hoeveel is 6 × 9?",
+      "answers": [
+        "45",
+        "54",
+        "48",
+        "60"
+      ],
+      "correct": 1,
+      "time": 15
+    }
+  ]
+}
