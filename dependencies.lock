@@ -37,6 +37,13 @@ dependencies:
     source:
       type: idf
     version: 5.5.2
+  lvgl/lvgl:
+    component_hash: 184e532558c1c45fefed631f3e235423d22582aafb4630f3e8885c35281a49ae
+    dependencies: []
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 9.5.0
   waveshare/esp_lcd_touch_cst9217:
     component_hash: 27a00845832b7987cacf4c4125cbed5415d940987583065b01870ac080930856
     dependencies:
@@ -54,7 +61,8 @@ dependencies:
 direct_dependencies:
 - espressif/esp_lcd_sh8601
 - idf
+- lvgl/lvgl
 - waveshare/esp_lcd_touch_cst9217
-manifest_hash: 01f607fbadb383323bb1b1d82fc700089a805b69b63f8c3f374abe1d333b86db
+manifest_hash: 492f8156006106b0f75dd80853721853d2be7c9fe5ed0f9b135a63b48015898f
 target: esp32c6
 version: 2.0.0

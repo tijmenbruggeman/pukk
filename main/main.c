@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "board.h"
+#include "ui.h"
 
 static const char *TAG = "pukk";
 
@@ -50,9 +51,10 @@ static void init_nvs(void)
 static void log_status(void)
 {
     board_pmu_log_status();
-    ESP_LOGI(TAG, "status: heap free %u, min ever %u",
+    ESP_LOGI(TAG, "status: heap free %u, min ever %u, lvgl stack unused %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+             (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)ui_task_stack_free());
 }
 
 void app_main(void)
@@ -76,6 +78,12 @@ void app_main(void)
 
     ESP_ERROR_CHECK(board_touch_init());
     log_heap("touch");
+
+    ESP_ERROR_CHECK(ui_init());
+    log_heap("lvgl");
+
+    ui_quiz_show();
+    log_heap("ui");
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));

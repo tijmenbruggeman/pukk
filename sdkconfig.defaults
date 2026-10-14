@@ -19,3 +19,25 @@ CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 # Crash dumps go to the "coredump" partition; read with `idf.py coredump-info`.
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+# Needed for the whole-system CPU load shown by the LVGL performance monitor.
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+
+#
+# LVGL 9 (configured through Kconfig, no lv_conf.h)
+#
+CONFIG_LV_COLOR_DEPTH_16=y
+CONFIG_LV_BUILD_EXAMPLES=n
+CONFIG_LV_BUILD_DEMOS=n
+# LVGL's own heap (objects, styles), a static array in internal RAM.
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
+CONFIG_LV_USE_LOG=y
+CONFIG_LV_LOG_LEVEL_WARN=y
+CONFIG_LV_LOG_PRINTF=y
+CONFIG_LV_THEME_DEFAULT_DARK=y
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_40=y
+# FPS/CPU overlay (bottom right) and LVGL heap overlay (bottom left).
+CONFIG_LV_USE_SYSMON=y
+CONFIG_LV_USE_PERF_MONITOR=y
+CONFIG_LV_USE_MEM_MONITOR=y

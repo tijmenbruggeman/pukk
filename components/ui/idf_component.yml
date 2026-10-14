@@ -1,0 +1,5 @@
+dependencies:
+  idf: ">=5.5"
+  # 9.5.x: the version the Waveshare demo uses. 9.6 adds Kconfig-conditional
+  # dependencies that make component manager 2.4 write a broken lock file.
+  lvgl/lvgl: "~9.5.0"
