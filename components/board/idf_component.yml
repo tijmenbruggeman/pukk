@@ -1,0 +1,5 @@
+## Same display/touch drivers as the Waveshare 09_LVGL_V9_Test demo.
+dependencies:
+  idf: ">=5.5"
+  espressif/esp_lcd_sh8601: "^1.0.0"
+  waveshare/esp_lcd_touch_cst9217: "^1.0.4"

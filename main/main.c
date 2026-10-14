@@ -71,6 +71,12 @@ void app_main(void)
     board_pmu_log_status();
     log_heap("pmu");
 
+    ESP_ERROR_CHECK(board_display_init());
+    log_heap("display");
+
+    ESP_ERROR_CHECK(board_touch_init());
+    log_heap("touch");
+
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
         log_status();

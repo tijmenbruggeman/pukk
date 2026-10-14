@@ -8,6 +8,8 @@
 #include "driver/i2c_master.h"
 #include "esp_err.h"
 #include "board_pmu.h"
+#include "board_display.h"
+#include "board_touch.h"
 
 #ifdef __cplusplus
 extern "C" {

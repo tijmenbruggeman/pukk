@@ -36,11 +36,19 @@
 #define BOARD_LCD_PCLK_HZ       (40 * 1000 * 1000)
 #define BOARD_LCD_H_RES         480
 #define BOARD_LCD_V_RES         480
+/* Largest single color transfer; sizes the SPI DMA descriptor list. */
+#define BOARD_LCD_MAX_TRANSFER_LINES 120
+/* CO5300 needs flushed areas to start on even coordinates with even sizes. */
+#define BOARD_LCD_ALIGN         2
 
 /* Touch controller (J4 pins 17/18). */
 #define BOARD_TOUCH_INT         GPIO_NUM_5
 #define BOARD_TOUCH_RST         GPIO_NUM_11
 #define BOARD_TOUCH_I2C_HZ      400000
+/* Map raw touch coordinates onto the panel orientation set by MADCTL 0x30. */
+#define BOARD_TOUCH_SWAP_XY     1
+#define BOARD_TOUCH_MIRROR_X    0
+#define BOARD_TOUCH_MIRROR_Y    1
 
 /* Buttons (silkscreen names). IO10 and BOOT are active low with 10k pull-ups.
  * PWR goes to the AXP2101 PWRON pin; it is mirrored on GPIO18 through
