@@ -241,11 +241,9 @@ static void stop(battle_stop_t reason)
     memset(&b, 0, sizeof(b));
 }
 
+/* Also when idle: the UI waits for STOPPED to go home. */
 static void leave(void)
 {
-    if (b.state == ST_IDLE) {
-        return;
-    }
     /* Tell the other one, unless there is no link or the game is over. */
     if (b.state > ST_SEARCHING && b.state != ST_FINISHED) {
         if (b.role == BATTLE_ROLE_HOST) {
