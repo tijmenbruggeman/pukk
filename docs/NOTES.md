@@ -53,9 +53,9 @@ de hardware geverifieerd is.
 5. **ESP-IDF-versie.** De Waveshare-docs zeggen v5.5.2; de map in de repo
    heet `ESP-IDF-v5.5.3`, de `sdkconfig.defaults` daarin zeggen 5.5.1/5.5.2.
    We gebruiken v5.5.2.
-6. **Touch-chip.** Jij noemt een CST9220; Waveshare gebruikt de driver
-   `waveshare/esp_lcd_touch_cst9217` (zelfde protocol). De driver logt bij
-   boot het chiptype ("Chip Type: 0x...."). Even nakijken.
+6. **Touch-chip.** Waveshare gebruikt de driver
+   `waveshare/esp_lcd_touch_cst9217`; het bord heeft een CST9220. Geverifieerd:
+   de driver werkt en logt `Chip Type: 0x9220`, resolutie 480×480.
 7. **"KEY"-knop.** Op de silkscreen heten de knoppen BOOT, PWR en IO10. We
    nemen aan dat KEY = IO10 (GPIO10).
 
@@ -79,8 +79,10 @@ Afwijkingen:
   bovenste bits al gezet waren.
 - Extra aangezet voor de logging: accudetectie, ADC-kanalen VBAT/VBUS/VSYS en
   de fuel gauge (percentage).
-- ALDO1/ALDO2 (audio) laten we zoals ze na power-on staan; de log toont het
-  aan/uit-register.
+- ALDO1/ALDO2 (audio) laten we zoals ze na power-on staan. Gemeten: na
+  power-on staan DCDC1–4 aan (`0x0f`) en **alle** LDO's (`0xff`, ook BLDO,
+  CPUSLDO, DLDO1). Later voor stroombesparing uitzetten wat niet gebruikt
+  wordt.
 
 ### Scherm
 
@@ -172,11 +174,12 @@ Stand na fase 0 (v0.1.0):
 | `.text` in IRAM (o.a. BLE-controller, ISR's) | 91 376 |
 | `.bss` (waarvan 64 KB LVGL-heap) | 74 408 |
 | `.data` | 10 108 |
-| **Over voor de heap bij boot** | **276 220** |
+| "Remain" volgens `idf.py size` | 276 220 |
 | App-image in flash | 1,16 MB (OTA-slot 3 MB) |
 
-Daarvan gaan bij het opstarten o.a. af: 2 × 46 080 B draw buffers, de
-LVGL-taak (8 KB), NimBLE-controller en -host, en de main-taak.
+De echte heap bij de start van `app_main` is groter: 340 716 B intern (zie
+hieronder). `idf.py size` rekent geheugen dat de ROM-bootloader na het
+opstarten vrijgeeft niet mee.
 
 ## Open vragen
 
@@ -201,19 +204,48 @@ LVGL-taak (8 KB), NimBLE-controller en -host, en de main-taak.
 9. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
    Latin-1 genereren (lv_font_conv).
 
-## Geheugen bij boot
+## Geheugen bij boot (gemeten)
 
-Invullen na de eerste boot op hardware (regels `heap after ...` in de log):
+Board 1, v0.1.0, 14-10-2026. Regels `heap after ...` uit de boot-log. "Intern"
+is inclusief 15 KB LP-RAM (RTC RAM), die niet DMA-capable is; daarom ligt
+"DMA" steeds ~14,6 KB lager.
 
-| Na stap | Intern vrij | Δ |
-|---|---|---|
-| boot | | |
-| nvs | | |
-| pmu | | |
-| display | | |
-| touch | | |
-| lvgl | | |
-| ui | | |
-| buttons | | |
-| storage | | |
-| ble | | |
+| Na stap | Intern vrij | Δ | DMA vrij | Grootste DMA-blok |
+|---|---|---|---|---|
+| boot (start `app_main`) | 340 716 | | 326 112 | 311 296 |
+| nvs | 339 672 | −1 044 | 325 068 | 311 296 |
+| pmu | 338 316 | −1 356 | 323 712 | 311 296 |
+| display | 336 252 | −2 064 | 321 648 | 311 296 |
+| touch | 335 992 | −260 | 321 388 | 311 296 |
+| lvgl | 235 084 | **−100 908** | 220 480 | 212 992 |
+| ui | 235 084 | 0 | 220 480 | 212 992 |
+| buttons | 230 344 | −4 740 | 215 740 | 212 992 |
+| storage | 228 672 | −1 672 | 214 068 | 212 992 |
+| ble | 201 792 | **−26 880** | 187 188 | 184 320 |
+| na 60 s (statusregel) | 201 776 | | | |
+
+Wat het kost:
+
+- **LVGL: ~165 KB** = 101 KB heap (2 × 46 080 B draw buffers, 8 KB taakstack,
+  driverstructuren) + 64 KB vaste LVGL-heap in `.bss`. Het testscherm zelf kost
+  geen systeemheap; objecten staan in de LVGL-heap.
+- **BLE: ~70 KB** = 27 KB heap (controller, host, host-taak) + ~43 KB statisch
+  (vooral controllercode in IRAM).
+- Knoppen: 4 KB taakstack. LittleFS: 1,7 KB.
+- Na alles is er **~200 KB** heap vrij, in één blok van 180 KB.
+
+Stacks (nooit gebruikt, na 60 s): main 4 556 van 6 144 B, LVGL 4 472 van
+8 192 B. Main kan terug naar 4 KB; LVGL houden we op 8 KB tot er meer schermen
+zijn.
+
+Overige observaties uit dezelfde boot:
+
+- Accu aanwezig: 4 184 mV (100%), laden klaar, USB 5,24 V, systeem 4,39 V.
+- Scherm-init duurt ~1 s: 300 ms ALDO3-reset plus 600 ms na sleep-out (de
+  waarden uit de Waveshare-sequentie).
+- Timer: na 15 s verschijnt "Tijd is om!".
+- BLE-naam van board 1: `Pukk-EA66` (MAC `d4:05:92:b8:ea:66`).
+- `E esp_core_dump_flash: Incorrect size of core dump image`: de
+  coredump-partitie bevat nog resten van de vorige (Waveshare-)firmware. Eén
+  keer per bord leegmaken:
+  `esptool -p PORT erase-region 0x620000 0x10000`.

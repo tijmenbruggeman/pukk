@@ -166,6 +166,8 @@ LVGL, code die in IRAM moet) deelt die 512 KB.
   verbinding, geen pairing.
 - LVGL-functies staan **niet** in IRAM (dat kost op de C6 heap-RAM).
 - De boot-log toont na elke stap de vrije interne en DMA-capable heap en het
-  verschil met de vorige stap (`heap after …`). Op de C6 is alle interne RAM
-  DMA-capable, dus beide getallen lopen gelijk op. `idf.py size` toont het
+  verschil met de vorige stap (`heap after …`). Het verschil tussen die twee is
+  15 KB LP-RAM die wel intern maar niet DMA-capable is. `idf.py size` toont het
   statische deel (`.bss`, `.data`, IRAM).
+- Gemeten op board 1: LVGL kost ~165 KB, BLE ~70 KB, en na het opstarten is er
+  ~200 KB heap vrij. Details in [docs/NOTES.md](docs/NOTES.md).
