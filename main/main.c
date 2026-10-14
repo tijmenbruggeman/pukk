@@ -72,7 +72,7 @@ static void update_battery(void)
 /* Runs in the battle task. */
 static void on_battle_event(const battle_event_t *event, void *ctx)
 {
-    ESP_LOGI(TAG, "battle event %d", event->type);
+    ui_battle_event(event);
 }
 
 /* Runs in the NimBLE host task. */

@@ -22,6 +22,10 @@
 #define UI_COLOR_BAD            lv_color_hex(0xFF5A5F)
 #define UI_COLOR_WARN           lv_color_hex(0xFFB020)
 #define UI_COLOR_BLE            lv_color_hex(0x3D8BFF)
+#define UI_COLOR_ON_GOOD        lv_color_hex(0x06301F)
+#define UI_COLOR_ON_WARN        lv_color_hex(0x3A2500)
+/* The other Pukk in a battle; we are UI_COLOR_BRAND. */
+#define UI_COLOR_OPPONENT       lv_color_hex(0x3D8BFF)
 
 /* Typography */
 #define UI_FONT_SMALL           (&pukk_font_20)   /* labels, status; has symbols */
@@ -38,6 +42,7 @@
 
 #define UI_RADIUS_CARD          20
 #define UI_SCREEN_PAD           16
+#define UI_BUTTON_H             64
 
 typedef struct {
     lv_color_t bg;

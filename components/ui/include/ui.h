@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "battle.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +35,7 @@ void ui_show_splash(void);
 /* Show the pack list (after the splash has been up for a moment). */
 void ui_show_home(void);
 
-/* KEY button: leave a game and return to the pack list. */
+/* KEY button: leave a game or battle and return to the pack list. */
 void ui_back(void);
 
 /* Status bar: BLE name (so you know where to upload to), battery, link. */
@@ -52,6 +53,9 @@ void ui_packs_changed(void);
 /* Upload pop-up. `result` is 0 on success, else a pukk_ble result code. */
 void ui_upload_progress(const char *name, uint32_t received, uint32_t total);
 void ui_upload_finished(const char *name, int result);
+
+/* Show what the battle engine reports (from its task). */
+void ui_battle_event(const battle_event_t *event);
 
 #ifdef __cplusplus
 }

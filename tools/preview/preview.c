@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "lvgl.h"
+#include "packs.h"
 #include "ui.h"
 #include "ui_priv.h"
 
@@ -107,6 +108,147 @@ static void snap(const char *name)
     printf("preview: %s\n", name);
 }
 
+/* --- battle events, as the engine would send them ------------------------------ */
+
+static pack_question_t s_q;
+
+static battle_event_t battle_ev(battle_event_type_t type, battle_role_t role, const char *opponent,
+                                const char *title, uint32_t mine, uint32_t theirs)
+{
+    battle_event_t e;
+    memset(&e, 0, sizeof(e));
+    e.type = type;
+    e.role = role;
+    e.opponent = opponent;
+    e.title = title;
+    e.score[BATTLE_ME] = mine;
+    e.score[BATTLE_THEM] = theirs;
+    return e;
+}
+
+static void lobby(battle_role_t role, battle_lobby_t status, const char *opponent, const char *title,
+                  uint32_t sent, uint32_t total)
+{
+    battle_event_t e = battle_ev(BATTLE_EVENT_LOBBY, role, opponent, title, 0, 0);
+    e.lobby.status = status;
+    e.lobby.sent = sent;
+    e.lobby.total = total;
+    ui_battle_event(&e);
+}
+
+static void battle_question(uint16_t index, uint32_t mine, uint32_t theirs)
+{
+    packs_read_question("algemeen", index, &s_q);
+    battle_event_t e = battle_ev(BATTLE_EVENT_QUESTION, BATTLE_ROLE_HOST, "Pukk-AF8E", "Algemene kennis",
+                                 mine, theirs);
+    e.question.q = &s_q;
+    e.question.index = index;
+    e.question.count = 4;
+    ui_battle_event(&e);
+}
+
+static void battle_round(uint8_t winner, uint8_t mine_choice, uint8_t their_choice, uint16_t points,
+                         uint32_t mine, uint32_t theirs)
+{
+    battle_event_t e = battle_ev(BATTLE_EVENT_ROUND, BATTLE_ROLE_HOST, "Pukk-AF8E", "Algemene kennis",
+                                 mine, theirs);
+    e.round.correct = s_q.correct;
+    e.round.winner = winner;
+    e.round.choice[BATTLE_ME] = mine_choice;
+    e.round.choice[BATTLE_THEM] = their_choice;
+    e.round.points = points;
+    ui_battle_event(&e);
+}
+
+static void battle_scenes(void)
+{
+    fake_pack_count = 3;
+    ui_packs_changed();
+    run_ms(300);
+    tap_text("Algemene kennis");
+    run_ms(400);
+    tap_text("Battle");
+
+    lobby(BATTLE_ROLE_HOST, BATTLE_LOBBY_SEARCHING, "", "Algemene kennis", 0, 0);
+    run_ms(500);
+    snap("20-lobby-host-searching");
+    lobby(BATTLE_ROLE_HOST, BATTLE_LOBBY_CONNECTED, "Pukk-AF8E", "Algemene kennis", 0, 0);
+    run_ms(300);
+    snap("21-lobby-host-connected");
+    lobby(BATTLE_ROLE_HOST, BATTLE_LOBBY_TRANSFER, "Pukk-AF8E", "Algemene kennis", 2900, 7000);
+    run_ms(300);
+    snap("22-lobby-host-transfer");
+    lobby(BATTLE_ROLE_HOST, BATTLE_LOBBY_READY, "Pukk-AF8E", "Algemene kennis", 0, 0);
+    run_ms(500);
+    snap("23-lobby-host-ready");
+    tap_text("Start");
+
+    battle_event_t e = battle_ev(BATTLE_EVENT_COUNTDOWN, BATTLE_ROLE_HOST, "Pukk-AF8E", "Algemene kennis",
+                                 0, 0);
+    e.countdown.seconds = BATTLE_COUNTDOWN_S;
+    ui_battle_event(&e);
+    run_ms(1400);
+    snap("24-countdown");
+
+    run_ms(1700);
+    battle_question(0, 0, 0);
+    run_ms(2500);
+    snap("25-battle-question");
+    tap_text("Venus");
+    run_ms(300);
+    snap("26-battle-answered");
+    run_ms(900);
+    battle_round(BATTLE_THEM, 0, 1, 870, 0, 870);
+    run_ms(450);
+    snap("27-battle-round-wrong");
+
+    run_ms(2000);
+    battle_question(1, 0, 870);
+    run_ms(1200);
+    tap_text("Ja");
+    run_ms(200);
+    battle_round(BATTLE_ME, 0, BATTLE_LATE, 920, 920, 870);
+    run_ms(450);
+    snap("28-battle-round-won");
+
+    run_ms(2000);
+    battle_question(2, 920, 870);
+    run_ms(3000);
+    battle_round(BATTLE_THEM, BATTLE_LATE, 1, 810, 920, 1680);
+    run_ms(450);
+    snap("29-battle-round-late");
+
+    e = battle_ev(BATTLE_EVENT_FINISHED, BATTLE_ROLE_HOST, "Pukk-AF8E", "Algemene kennis", 920, 1680);
+    ui_battle_event(&e);
+    run_ms(600);
+    snap("30-battle-result");
+    tap_text("Terug");
+
+    e = battle_ev(BATTLE_EVENT_STOPPED, BATTLE_ROLE_HOST, "Pukk-AF8E", "Algemene kennis", 0, 0);
+    e.stopped.reason = BATTLE_STOP_LEFT;
+    ui_battle_event(&e);
+    run_ms(500);
+    tap_text("Meedoen");
+    lobby(BATTLE_ROLE_GUEST, BATTLE_LOBBY_SEARCHING, "", "", 0, 0);
+    run_ms(500);
+    snap("31-lobby-guest-searching");
+    lobby(BATTLE_ROLE_GUEST, BATTLE_LOBBY_TRANSFER, "Pukk-EA66", "dieren", 0, 0);
+    ui_upload_progress("dieren", 4096, 7000);
+    run_ms(300);
+    snap("32-lobby-guest-transfer");
+    ui_upload_finished("dieren", 0);
+    run_ms(2800);
+    lobby(BATTLE_ROLE_GUEST, BATTLE_LOBBY_READY, "Pukk-EA66", "Dieren in de Ardèche", 0, 0);
+    run_ms(500);
+    snap("33-lobby-guest-ready");
+
+    e = battle_ev(BATTLE_EVENT_STOPPED, BATTLE_ROLE_GUEST, "Pukk-EA66", "Dieren in de Ardèche", 0, 0);
+    e.stopped.reason = BATTLE_STOP_OPPONENT;
+    ui_battle_event(&e);
+    run_ms(400);
+    snap("34-battle-stopped");
+}
+
 /* --- scenes ---------------------------------------------------------------- */
 
 int main(void)
@@ -134,48 +276,54 @@ int main(void)
 
     tap_text("Algemene kennis");
     run_ms(400);
-    snap("02-question");
+    snap("02-pack");
+    tap_text("Spelen");
+    run_ms(400);
+    snap("03-question");
     run_ms(9000);
-    snap("03-question-9s");
+    snap("04-question-9s");
 
     tap_text("Venus");
     run_ms(450);
-    snap("04-reveal-wrong");
+    snap("05-reveal-wrong");
     run_ms(2000);
-    snap("05-two-answers");
+    snap("06-two-answers");
 
     tap_text("Ja");
     run_ms(450);
-    snap("06-reveal-good");
+    snap("07-reveal-good");
     run_ms(2000);
-    snap("07-three-answers");
+    snap("08-three-answers");
 
     run_ms(16000);
-    snap("08-timeout");
+    snap("09-timeout");
     run_ms(2000);
     tap_text("8");
     run_ms(2600);
-    snap("09-result");
+    snap("10-result");
 
     tap_text("Terug");
     run_ms(500);
     ui_upload_progress("dieren", 3000, 7000);
     run_ms(300);
-    snap("10-upload");
+    snap("11-upload");
     ui_upload_finished("dieren", 0);
     run_ms(300);
-    snap("11-upload-done");
+    snap("12-upload-done");
 
     run_ms(3000);
     ui_set_ble_connected(true);
     ui_set_battery(9, false);
     run_ms(100);
-    snap("12-home-ble-low-battery");
+    snap("13-home-ble-low-battery");
 
     fake_pack_count = 0;
     ui_set_battery(45, true);
     ui_packs_changed();
     run_ms(300);
-    snap("13-empty-charging");
+    snap("14-empty-charging");
+
+    ui_set_battery(82, false);
+    battle_scenes();
     return 0;
 }
