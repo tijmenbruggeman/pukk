@@ -77,7 +77,9 @@ static void on_ble_event(const pukk_ble_event_t *event, void *ctx)
         break;
     case PUKK_BLE_EVENT_CONNECTED:
     case PUKK_BLE_EVENT_DISCONNECTED:
-        ui_set_ble_connected(event->type == PUKK_BLE_EVENT_CONNECTED);
+    case PUKK_BLE_EVENT_PEER_CONNECTED:
+    case PUKK_BLE_EVENT_PEER_DISCONNECTED:
+        ui_set_ble_connected(pukk_ble_connected());
         break;
     case PUKK_BLE_EVENT_UPLOAD_STARTED:
     case PUKK_BLE_EVENT_UPLOAD_PROGRESS:

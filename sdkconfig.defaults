@@ -46,13 +46,16 @@ CONFIG_LV_USE_PERF_MONITOR=y
 CONFIG_LV_USE_MEM_MONITOR=y
 
 #
-# Bluetooth: NimBLE host, BLE peripheral only (no Bluedroid)
+# Bluetooth: NimBLE host (no Bluedroid); peripheral, and central for battles
 #
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
-CONFIG_BT_NIMBLE_ROLE_CENTRAL=n
-CONFIG_BT_NIMBLE_ROLE_OBSERVER=n
+# Two links: an app or tool, plus another Pukk in a battle (as host we are
+# its central, as guest it is ours).
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=2
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_GATT_CLIENT=y
 # No pairing/bonding in phase 0 (see docs/NOTES.md).
 CONFIG_BT_NIMBLE_SECURITY_ENABLE=n
 # 247 = one LL packet with Data Length Extension.

@@ -23,6 +23,8 @@ enum {
 #define PROGRESS_STEP   4096
 
 static char s_name[PACKS_NAME_MAX + 1];
+/* The client doing the upload; other clients get BUSY meanwhile. */
+static uint16_t s_client;
 static uint32_t s_total;
 static uint32_t s_next_progress;
 /* Position of the last RESEND, so a burst of out-of-order writes asks once. */
@@ -40,17 +42,23 @@ static void put_u32(uint8_t *p, uint32_t v)
     }
 }
 
-static void send_ok(uint8_t op)
+static void send_ok(uint16_t conn, uint8_t op)
 {
     const uint8_t rsp[] = { RSP_OK, op };
-    ble_ctrl_notify(rsp, sizeof(rsp));
+    ble_ctrl_notify(conn, rsp, sizeof(rsp));
 }
 
-static void send_error(uint8_t op, packs_err_t err)
+static void send_error(uint16_t conn, uint8_t op, packs_err_t err)
 {
     const uint8_t rsp[] = { RSP_ERROR, op, (uint8_t)err };
     ESP_LOGW(TAG, "request 0x%02x failed: %s", op, packs_err_name(err));
-    ble_ctrl_notify(rsp, sizeof(rsp));
+    ble_ctrl_notify(conn, rsp, sizeof(rsp));
+}
+
+/* An upload is running for another client. */
+static bool busy_for(uint16_t conn)
+{
+    return packs_upload_active() && conn != s_client;
 }
 
 static void emit(pukk_ble_event_type_t type, uint32_t received, int result)
@@ -83,44 +91,49 @@ static void abort_upload(int result)
     emit(PUKK_BLE_EVENT_UPLOAD_FINISHED, received, result);
 }
 
-static void handle_begin(const uint8_t *p, size_t n)
+static void handle_begin(uint16_t conn, const uint8_t *p, size_t n)
 {
     if (packs_upload_active()) {
-        send_error(OP_BEGIN, PACKS_ERR_BUSY);
+        send_error(conn, OP_BEGIN, PACKS_ERR_BUSY);
         return;
     }
     if (n < 9 || !parse_name(p + 8, n - 8)) {
-        send_error(OP_BEGIN, PACKS_ERR_INVALID_ARG);
+        send_error(conn, OP_BEGIN, PACKS_ERR_INVALID_ARG);
         return;
     }
     uint32_t size = get_u32(p);
     packs_err_t err = packs_upload_begin(s_name, size, get_u32(p + 4));
     if (err != PACKS_OK) {
-        send_error(OP_BEGIN, err);
+        send_error(conn, OP_BEGIN, err);
         return;
     }
+    s_client = conn;
     s_total = size;
     s_next_progress = PROGRESS_STEP;
     s_resend_at = UINT32_MAX;
 
-    uint16_t chunk = ble_max_chunk();
+    uint16_t chunk = ble_max_chunk(conn);
     const uint8_t rsp[] = { RSP_OK, OP_BEGIN, (uint8_t)chunk, (uint8_t)(chunk >> 8) };
-    ble_ctrl_notify(rsp, sizeof(rsp));
+    ble_ctrl_notify(conn, rsp, sizeof(rsp));
     emit(PUKK_BLE_EVENT_UPLOAD_STARTED, 0, 0);
 }
 
-static void handle_end(void)
+static void handle_end(uint16_t conn)
 {
+    if (busy_for(conn)) {
+        send_error(conn, OP_END, PACKS_ERR_BUSY);
+        return;
+    }
     uint32_t received = packs_upload_received();
     packs_err_t err = packs_upload_finish();
     if (err == PACKS_ERR_NO_UPLOAD) {
-        send_error(OP_END, err);
+        send_error(conn, OP_END, err);
         return;
     }
     if (err == PACKS_OK) {
-        send_ok(OP_END);
+        send_ok(conn, OP_END);
     } else {
-        send_error(OP_END, err);
+        send_error(conn, OP_END, err);
     }
     emit(PUKK_BLE_EVENT_UPLOAD_FINISHED, received, err);
     if (err == PACKS_OK) {
@@ -128,22 +141,27 @@ static void handle_end(void)
     }
 }
 
-static void handle_delete(const uint8_t *p, size_t n)
+static void handle_delete(uint16_t conn, const uint8_t *p, size_t n)
 {
+    /* parse_name() overwrites the name of a running upload. */
+    if (packs_upload_active()) {
+        send_error(conn, OP_DELETE, PACKS_ERR_BUSY);
+        return;
+    }
     if (!parse_name(p, n)) {
-        send_error(OP_DELETE, PACKS_ERR_INVALID_ARG);
+        send_error(conn, OP_DELETE, PACKS_ERR_INVALID_ARG);
         return;
     }
     packs_err_t err = packs_delete(s_name);
     if (err != PACKS_OK) {
-        send_error(OP_DELETE, err);
+        send_error(conn, OP_DELETE, err);
         return;
     }
-    send_ok(OP_DELETE);
+    send_ok(conn, OP_DELETE);
     emit(PUKK_BLE_EVENT_PACKS_CHANGED, 0, 0);
 }
 
-void protocol_ctrl_write(const uint8_t *data, size_t len)
+void protocol_ctrl_write(uint16_t conn, const uint8_t *data, size_t len)
 {
     if (len == 0) {
         return;
@@ -154,34 +172,42 @@ void protocol_ctrl_write(const uint8_t *data, size_t len)
 
     switch (op) {
     case OP_BEGIN:
-        handle_begin(p, n);
+        handle_begin(conn, p, n);
         break;
     case OP_END:
-        handle_end();
+        handle_end(conn);
         break;
     case OP_ABORT:
+        if (busy_for(conn)) {
+            send_error(conn, OP_ABORT, PACKS_ERR_BUSY);
+            break;
+        }
         if (packs_upload_active()) {
             abort_upload(PUKK_BLE_RESULT_ABORTED);
         }
-        send_ok(OP_ABORT);
+        send_ok(conn, OP_ABORT);
         break;
     case OP_DELETE:
-        handle_delete(p, n);
+        handle_delete(conn, p, n);
         break;
     default:
-        send_error(op, PACKS_ERR_INVALID_ARG);
+        send_error(conn, op, PACKS_ERR_INVALID_ARG);
         break;
     }
 }
 
-void protocol_data_write(const uint8_t *data, size_t len)
+void protocol_data_write(uint16_t conn, const uint8_t *data, size_t len)
 {
     if (len < 4) {
-        send_error(OP_DATA, PACKS_ERR_INVALID_ARG);
+        send_error(conn, OP_DATA, PACKS_ERR_INVALID_ARG);
         return;
     }
     if (!packs_upload_active()) {
-        send_error(OP_DATA, PACKS_ERR_NO_UPLOAD);
+        send_error(conn, OP_DATA, PACKS_ERR_NO_UPLOAD);
+        return;
+    }
+    if (busy_for(conn)) {
+        send_error(conn, OP_DATA, PACKS_ERR_BUSY);
         return;
     }
     packs_err_t err = packs_upload_write(get_u32(data), data + 4, len - 4);
@@ -193,12 +219,12 @@ void protocol_data_write(const uint8_t *data, size_t len)
             ESP_LOGW(TAG, "gap at %lu, asking for resend", (unsigned long)received);
             uint8_t rsp[5] = { RSP_RESEND };
             put_u32(rsp + 1, received);
-            ble_ctrl_notify(rsp, sizeof(rsp));
+            ble_ctrl_notify(conn, rsp, sizeof(rsp));
         }
         return;
     }
     if (err != PACKS_OK) {
-        send_error(OP_DATA, err);
+        send_error(conn, OP_DATA, err);
         abort_upload(err);
         return;
     }
@@ -209,14 +235,14 @@ void protocol_data_write(const uint8_t *data, size_t len)
         }
         uint8_t rsp[5] = { RSP_PROGRESS };
         put_u32(rsp + 1, received);
-        ble_ctrl_notify(rsp, sizeof(rsp));
+        ble_ctrl_notify(conn, rsp, sizeof(rsp));
         emit(PUKK_BLE_EVENT_UPLOAD_PROGRESS, received, 0);
     }
 }
 
-void protocol_disconnected(void)
+void protocol_disconnected(uint16_t conn)
 {
-    if (packs_upload_active()) {
+    if (packs_upload_active() && conn == s_client) {
         abort_upload(PUKK_BLE_RESULT_DISCONNECTED);
     }
 }
