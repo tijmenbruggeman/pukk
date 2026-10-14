@@ -1,0 +1,14 @@
+menu "Pukk board"
+
+    choice PUKK_BOARD
+        prompt "Board variant"
+        default PUKK_BOARD_WS_C6_AMOLED_216
+        help
+            Hardware variant. Pin assignments live in board_config.h.
+
+        config PUKK_BOARD_WS_C6_AMOLED_216
+            bool "Waveshare ESP32-C6-Touch-AMOLED-2.16"
+            depends on IDF_TARGET_ESP32C6
+    endchoice
+
+endmenu

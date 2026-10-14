@@ -11,6 +11,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "board.h"
 
 static const char *TAG = "pukk";
 
@@ -48,6 +49,7 @@ static void init_nvs(void)
 
 static void log_status(void)
 {
+    board_pmu_log_status();
     ESP_LOGI(TAG, "status: heap free %u, min ever %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
@@ -61,6 +63,13 @@ void app_main(void)
 
     init_nvs();
     log_heap("nvs");
+
+    /* The PMU must come first: it powers and resets the display. */
+    ESP_LOGI(TAG, "board: %s", board_name());
+    ESP_ERROR_CHECK(board_i2c_init());
+    ESP_ERROR_CHECK(board_pmu_init());
+    board_pmu_log_status();
+    log_heap("pmu");
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
