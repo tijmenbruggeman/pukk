@@ -61,10 +61,12 @@ static void on_button(board_button_t button, void *ctx)
 static void log_status(void)
 {
     board_pmu_log_status();
-    ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u",
+    TaskHandle_t ble_host = xTaskGetHandle("nimble_host");
+    ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u, ble %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-             (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)ui_task_stack_free());
+             (unsigned)uxTaskGetStackHighWaterMark(NULL), (unsigned)ui_task_stack_free(),
+             ble_host ? (unsigned)uxTaskGetStackHighWaterMark(ble_host) : 0);
 }
 
 void app_main(void)
@@ -106,7 +108,7 @@ void app_main(void)
     }
     log_heap("storage");
 
-    ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init());
+    ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init(NULL, NULL));
     log_heap("ble");
 
     for (;;) {

@@ -13,3 +13,6 @@ sdkconfig.old
 
 # Built packs (generate with tools/pukk.py build)
 *.pukk
+
+# Python virtualenv for tools/
+.venv/

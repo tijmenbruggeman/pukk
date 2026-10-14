@@ -80,6 +80,15 @@ Service `8e410001-0580-4871-83bd-51273ef66407`.
 | CTRL | `8e410002-…` | write: verzoeken; notify: antwoorden |
 | DATA | `8e410003-…` | write without response: bestandsdata |
 | INFO | `8e410004-…` | read: JSON met firmwareversie en vrije flash |
+| PACKS | `8e410005-…` | read: JSON-lijst van de packs op het apparaat |
+
+PACKS geeft bijvoorbeeld:
+
+```json
+[{"name":"voorbeeld","title":"Voorbeeld","questions":8,"size":667}]
+```
+
+Langer dan één MTU is geen probleem: de client doet dan zelf een lange read.
 
 Zet eerst notificaties op CTRL aan. Eén verzoek tegelijk; wacht op het
 antwoord.
@@ -91,8 +100,7 @@ antwoord.
 | `0x01` | BEGIN | `u32 size, u32 crc32, u8 name_len, name` |
 | `0x02` | END | – |
 | `0x03` | ABORT | – |
-| `0x04` | LIST | – |
-| `0x05` | DELETE | `u8 name_len, name` |
+| `0x04` | DELETE | `u8 name_len, name` |
 
 `name`: 1–32 tekens `a-z`, `0-9`, `-`, `_`. Het bestand wordt
 `/packs/<name>.pukk`; een bestaand pack met dezelfde naam wordt vervangen.
@@ -103,10 +111,9 @@ antwoord.
 |---|---|---|
 | `0x80` | OK | `u8 request_opcode` + bij BEGIN: `u16 max_chunk` |
 | `0x81` | PROGRESS | `u32 received` |
-| `0x82` | LIST_ITEM | `u32 size, u16 question_count, u8 name_len, name` |
 | `0x8F` | ERROR | `u8 request_opcode, u8 code` |
 
-LIST stuurt één LIST_ITEM per pack en daarna OK(LIST).
+Fouten in DATA-writes melden `ERROR` met request_opcode `0x10`.
 
 Foutcodes:
 
@@ -127,7 +134,7 @@ Foutcodes:
 1. `BEGIN(size, crc32, name)` → `OK(BEGIN, max_chunk)`.
 2. DATA-writes: `u32 offset` + maximaal `max_chunk` bytes data, op volgorde.
    Een write die al ontvangen data herhaalt wordt genegeerd; een gat geeft
-   `ERROR(5)` en breekt de upload af. Elke 4 KiB en aan het eind stuurt het
+   `ERROR(0x10, 5)` en breekt de upload af. Elke 4 KiB en aan het eind stuurt het
    apparaat `PROGRESS(received)`.
 3. `END` → het apparaat controleert grootte, CRC en het packformaat, en
    antwoordt `OK(END)` of `ERROR(END, code)`.

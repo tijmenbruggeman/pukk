@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""Pukk pack tool: build .pukk packs from JSON and inspect them.
+"""Pukk pack tool: build .pukk packs from JSON and manage them over BLE.
 
-Format: docs/PACKS.md.
+Format and protocol: docs/PACKS.md. The BLE commands need `bleak`
+(pip install -r tools/requirements.txt).
 
     python3 tools/pukk.py build packs/voorbeeld.json
     python3 tools/pukk.py inspect packs/voorbeeld.pukk
+    python3 tools/pukk.py scan
+    python3 tools/pukk.py upload packs/voorbeeld.json [--device Pukk-EA66]
+    python3 tools/pukk.py list
+    python3 tools/pukk.py delete voorbeeld
 """
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import re
 import struct
@@ -38,6 +44,24 @@ ASCII_REPLACEMENTS = {
 }
 
 NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+
+SERVICE_UUID = "8e410001-0580-4871-83bd-51273ef66407"
+CTRL_UUID, DATA_UUID, INFO_UUID, PACKS_UUID = (
+    f"8e41{n:04x}-0580-4871-83bd-51273ef66407" for n in (2, 3, 4, 5))
+
+OP_BEGIN, OP_END, OP_ABORT, OP_DELETE, OP_DATA = 0x01, 0x02, 0x03, 0x04, 0x10
+RSP_OK, RSP_PROGRESS, RSP_ERROR = 0x80, 0x81, 0x8F
+DEVICE_ERRORS = {
+    1: "busy: another upload is in progress",
+    2: "invalid request",
+    3: "not enough space on the device",
+    4: "no upload active",
+    5: "data arrived out of order",
+    6: "size or CRC mismatch",
+    7: "not a valid pack",
+    8: "read/write error on the device",
+    9: "not found",
+}
 
 
 class PackError(Exception):
@@ -191,6 +215,171 @@ def cmd_inspect(args: argparse.Namespace) -> None:
     print(json.dumps(inspect_pack(args.pack.read_bytes()), indent=2, ensure_ascii=False))
 
 
+# --- BLE ---------------------------------------------------------------------
+
+def require_bleak():
+    try:
+        import bleak  # noqa: F401
+    except ImportError as e:
+        raise PackError("BLE commands need bleak: pip install -r tools/requirements.txt") from e
+
+
+async def find_device(name: str | None, timeout: float):
+    from bleak import BleakScanner
+
+    def match(device, adv) -> bool:
+        local = adv.local_name or device.name or ""
+        if name:
+            return local == name
+        return local.startswith("Pukk-") or SERVICE_UUID in (u.lower() for u in adv.service_uuids)
+
+    device = await BleakScanner.find_device_by_filter(match, timeout=timeout)
+    if device is None:
+        raise PackError(f"no {name or 'Pukk device'} found within {timeout:.0f} s")
+    return device
+
+
+class Link:
+    """Requests on CTRL and the notifications that answer them."""
+
+    def __init__(self, client) -> None:
+        self.client = client
+        self.queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self.received = 0
+
+    async def start(self) -> None:
+        await self.client.start_notify(CTRL_UUID, lambda _c, data: self.queue.put_nowait(bytes(data)))
+
+    def _handle(self, msg: bytes, op: int) -> bytes | None:
+        if msg[0] == RSP_PROGRESS and len(msg) >= 5:
+            self.received = struct.unpack_from("<I", msg, 1)[0]
+        elif msg[0] == RSP_ERROR and len(msg) >= 3:
+            raise PackError(f"device: {DEVICE_ERRORS.get(msg[2], f'error {msg[2]}')}")
+        elif msg[0] == RSP_OK and len(msg) >= 2 and msg[1] == op:
+            return msg
+        return None
+
+    async def request(self, payload: bytes, timeout: float = 10.0) -> bytes:
+        await self.client.write_gatt_char(CTRL_UUID, payload, response=True)
+        while True:
+            msg = await asyncio.wait_for(self.queue.get(), timeout)
+            if (rsp := self._handle(msg, payload[0])) is not None:
+                return rsp
+
+    def poll(self) -> None:
+        """Handle notifications that arrived meanwhile (progress, errors)."""
+        while not self.queue.empty():
+            self._handle(self.queue.get_nowait(), -1)
+
+
+async def with_device(args: argparse.Namespace, action):
+    from bleak import BleakClient
+    device = await find_device(args.device, args.timeout)
+    print(f"connecting to {device.name or device.address}...", file=sys.stderr)
+    async with BleakClient(device) as client:
+        return await action(client)
+
+
+def progress_bar(done: int, total: int) -> None:
+    width = 30
+    filled = width * done // total
+    print(f"\r[{'#' * filled}{'.' * (width - filled)}] {done}/{total} bytes", end="",
+          file=sys.stderr, flush=True)
+
+
+async def upload(client, data: bytes, name: str) -> None:
+    link = Link(client)
+    await link.start()
+    begin = struct.pack("<BIIB", OP_BEGIN, len(data), zlib.crc32(data), len(name)) + name.encode()
+    rsp = await link.request(begin)
+    chunk = struct.unpack_from("<H", rsp, 2)[0]
+    if client.mtu_size:
+        chunk = min(chunk, client.mtu_size - 3 - 4)
+
+    try:
+        for offset in range(0, len(data), chunk):
+            payload = struct.pack("<I", offset) + data[offset:offset + chunk]
+            await client.write_gatt_char(DATA_UUID, payload, response=False)
+            link.poll()
+            progress_bar(min(offset + chunk, len(data)), len(data))
+        print(file=sys.stderr)
+        await link.request(bytes([OP_END]), timeout=30.0)
+    except BaseException:
+        print(file=sys.stderr)
+        if client.is_connected:
+            try:
+                await client.write_gatt_char(CTRL_UUID, bytes([OP_ABORT]), response=True)
+            except Exception:
+                pass
+        raise
+
+
+def cmd_scan(args: argparse.Namespace) -> None:
+    require_bleak()
+    from bleak import BleakScanner
+
+    async def scan():
+        found = await BleakScanner.discover(timeout=args.timeout, return_adv=True)
+        for device, adv in found.values():
+            local = adv.local_name or device.name or ""
+            if local.startswith("Pukk-") or SERVICE_UUID in (u.lower() for u in adv.service_uuids):
+                print(f"{local or '?':12} {device.address}  RSSI {adv.rssi} dBm")
+
+    asyncio.run(scan())
+
+
+def cmd_info(args: argparse.Namespace) -> None:
+    require_bleak()
+
+    async def action(client):
+        return json.loads(await client.read_gatt_char(INFO_UUID))
+
+    print(json.dumps(asyncio.run(with_device(args, action)), indent=2))
+
+
+def cmd_list(args: argparse.Namespace) -> None:
+    require_bleak()
+
+    async def action(client):
+        return json.loads(await client.read_gatt_char(PACKS_UUID))
+
+    packs = asyncio.run(with_device(args, action))
+    if not packs:
+        print("no packs on the device")
+    for p in packs:
+        print(f"{p['name']:20} {p['questions']:4} questions {p['size']:8} bytes  {p['title']}")
+
+
+def cmd_upload(args: argparse.Namespace) -> None:
+    require_bleak()
+    data, warnings = load_pack(args.pack)
+    for w in warnings:
+        print(f"warning: {w}", file=sys.stderr)
+    inspect_pack(data)  # refuse to send something the device would reject
+    name = pack_name(args.pack, args.name)
+
+    async def action(client):
+        await upload(client, data, name)
+
+    asyncio.run(with_device(args, action))
+    print(f"uploaded {name} ({len(data)} bytes)")
+
+
+def cmd_delete(args: argparse.Namespace) -> None:
+    require_bleak()
+    if not NAME_RE.match(args.name):
+        raise PackError(f"invalid pack name {args.name!r}")
+
+    async def action(client):
+        link = Link(client)
+        await link.start()
+        name = args.name.encode()
+        await link.request(bytes([OP_DELETE, len(name)]) + name)
+
+    asyncio.run(with_device(args, action))
+    print(f"deleted {args.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -205,12 +394,34 @@ def main() -> int:
     p.add_argument("pack", type=Path)
     p.set_defaults(func=cmd_inspect)
 
+    def ble_command(name: str, help: str):
+        p = sub.add_parser(name, help=help)
+        p.add_argument("--device", help="device name, e.g. Pukk-EA66 (default: first found)")
+        p.add_argument("--timeout", type=float, default=10.0, help="scan time in seconds")
+        return p
+
+    ble_command("scan", "list Pukk devices in range").set_defaults(func=cmd_scan)
+    ble_command("info", "show firmware version and free flash").set_defaults(func=cmd_info)
+    ble_command("list", "list the packs on a device").set_defaults(func=cmd_list)
+    p = ble_command("upload", "upload a pack (.json or .pukk)")
+    p.add_argument("pack", type=Path)
+    p.add_argument("--name", help="pack name on the device (default: file name)")
+    p.set_defaults(func=cmd_upload)
+    p = ble_command("delete", "delete a pack from a device")
+    p.add_argument("name")
+    p.set_defaults(func=cmd_delete)
+
     args = parser.parse_args()
     try:
         args.func(args)
     except PackError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
+    except (TimeoutError, asyncio.TimeoutError):
+        print("error: no response from the device", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        return 130
     return 0
 
 
