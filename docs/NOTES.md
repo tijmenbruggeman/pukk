@@ -126,8 +126,9 @@ Afwijkingen:
 
 ### BLE
 
-- NimBLE, alleen peripheral-rol, max. 1 verbinding, geen Security Manager
-  (geen pairing/bonding), ongebruikte standaardservices uit.
+- NimBLE, peripheral-rol, geen Security Manager (geen pairing/bonding),
+  ongebruikte standaardservices uit. Sinds fase 4 ook central en observer,
+  met max. 2 verbindingen (zie Fase 4).
 - Naam `Pukk-XXXX` = laatste 2 bytes van het BLE-adres zoals het
   geadverteerd wordt. De 128-bit service-UUID staat in het advertentiepakket,
   de naam in de scan response (samen passen ze niet in 31 bytes).
@@ -362,11 +363,51 @@ vervangt in plaats van een tweede aan te maken.
 - De browser laat je een Pukk kiezen in zijn eigen venster; je hoeft dat
   per sessie één keer te doen.
 
+## Fase 4: battle
+
+Spelregels en protocol: [BATTLE.md](BATTLE.md).
+
+### Keuzes
+
+- **Pukk tegen Pukk**, geen telefoon: één Pukk is host (kiest het pack,
+  beslist elke vraag), de ander gast. De host is BLE-central; de gast blijft
+  peripheral, zodat een app of tool tegelijk met de gast verbonden kan zijn.
+  Daarvoor staat NimBLE nu op 2 verbindingen met central- en observer-rol.
+- **Vinden zonder kiezen**: de gast zet een "meedoen"-vlag in zijn
+  advertentie (manufacturer data `FF FF 'P' 'K' 01`, past naast de
+  128-bit service-UUID); de host verbindt met de eerste die hij ziet. Met
+  twee Pukks in de kamer is kiezen overbodig; bij meer zou een lijst nodig
+  zijn.
+- **Snelheid telt, eerlijk gemeten**: elke Pukk meet de reactietijd vanaf zijn
+  eigen scherm. De host wacht op de gast 200 ms langer dan op zichzelf (de
+  vraag van de gast verschijnt later, zijn antwoord komt later binnen). Bij
+  een verbindingsinterval van 15 ms is dat ruim. Het eerste goede antwoord
+  wint 500–1000 punten; de ander is "te laat". Fout = alleen jij ligt eruit.
+- **Pack automatisch overzetten**: de gast vergelijkt naam en de CRC uit de
+  header (die het hele bestand dekt). Bij verschil stuurt de host het pack
+  met hetzelfde uploadprotocol als de app; de gast ziet de gewone
+  upload-pop-up.
+- **Berichten zonder antwoord** (write without response, notificaties): de
+  link-laag van BLE herhaalt pakketten zelf, en NimBLE heeft geen rij voor
+  meerdere writes met antwoord tegelijk. Writes met antwoord gebruikt de host
+  alleen voor CCCD's en BEGIN/END, nooit twee tegelijk.
+- **Eén taak voor de engine** (`components/battle/battle.c`) met een
+  wachtrij: UI-tikken, BLE-events en timers komen daar binnen, dus geen
+  locks. De regels (`battle_rules.c`) en berichten (`battle_msg.c`) zijn
+  losse C-code met host-tests.
+- **Tikken met tijdstempel**: de UI stempelt een tik meteen
+  (`esp_timer`), de engine rekent de reactietijd uit vanaf het moment dat
+  de vraag getoond is. Beide Pukks hebben dezelfde render- en touchvertraging,
+  dus die valt weg.
+- **Pack-pagina**: een pack aantikken opent eerst een pagina met Spelen en
+  Battle (één tik extra voor solo, maar battle is zo vindbaar). Het
+  beginscherm heeft bovenaan een kaart Meedoen.
+- De gedeelde vraagweergave (`quiz_view.c`) wordt door solo en battle
+  gebruikt; battle tekent er de scores van beide spelers en de keuze van de
+  tegenstander (blauwe stip) omheen.
+
 ## Roadmap
 
-- **Fase 4: battle-modus.** Twee Pukks spelen dezelfde quiz tegelijk. De
-  app kan al met meerdere Pukks verbinden; open is wie de quiz leidt (de app
-  of één van de Pukks) en hoe de vragen gelijk lopen.
 - **Fase 5: geluid.** ES8311 + speaker bij goed, fout en tijd.
 
 ## Geheugen: statisch (uit `idf.py size`)

@@ -36,8 +36,14 @@ Formaat en protocol: [docs/PACKS.md](docs/PACKS.md).
 **Fase 3** is de web-app ([app/](app/)): packs maken in de browser, online
 bewaren op je eigen server (Docker) en via Bluetooth naar Pukks sturen.
 
-**Fase 4** (battle: twee Pukks in dezelfde quiz) en **fase 5** (geluid) staan
-op de roadmap in [docs/NOTES.md](docs/NOTES.md).
+**Fase 4** is de battle-modus: twee Pukks spelen hetzelfde pack tegen elkaar,
+zonder telefoon. Tik op een pack › **Battle** op de ene Pukk en op
+**Meedoen** op de andere. Heeft de tweede het pack niet, dan stuurt de eerste
+het mee. Wie als eerste goed antwoordt, krijgt 500–1000 punten (sneller =
+meer); voor de ander is de vraag dan voorbij. Regels en protocol:
+[docs/BATTLE.md](docs/BATTLE.md).
+
+**Fase 5** (geluid) staat op de roadmap in [docs/NOTES.md](docs/NOTES.md).
 
 Beslissingen en open vragen staan in [docs/NOTES.md](docs/NOTES.md).
 
@@ -245,7 +251,7 @@ tools/test_host.sh
 
 | Silkscreen | GPIO | Functie |
 |---|---|---|
-| IO10 | 10 | KEY: vanuit een spel terug naar de packlijst |
+| IO10 | 10 | KEY: vanuit een spel terug naar de packlijst; in een battle stoppen (voor allebei) |
 | BOOT | 9 | downloadmodus (bij aanzetten); daarna FPS/geheugen-overlays aan/uit |
 | PWR | PMU (gespiegeld op GPIO18) | aan/uit (lang drukken = uit), verder alleen gelogd |
 
@@ -256,11 +262,14 @@ tools/test_host.sh
 | Service | `8e410001-0580-4871-83bd-51273ef66407` | |
 | CTRL | `8e410002-0580-4871-83bd-51273ef66407` | write, notify: verzoeken en antwoorden |
 | DATA | `8e410003-0580-4871-83bd-51273ef66407` | write without response: uploaddata |
-| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.3.0","flash_total":…,"flash_free":…}` |
+| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.4.0","flash_total":…,"flash_free":…}` |
 | PACKS | `8e410005-0580-4871-83bd-51273ef66407` | read: JSON-lijst van de packs |
+| BATTLE | `8e410006-0580-4871-83bd-51273ef66407` | write, notify: berichten tussen twee Pukks in een battle |
 
-Het protocol staat in [docs/PACKS.md](docs/PACKS.md). INFO en PACKS kun je ook
-met nRF Connect (iOS/Android) lezen.
+Het protocol staat in [docs/PACKS.md](docs/PACKS.md), de battle in
+[docs/BATTLE.md](docs/BATTLE.md). INFO en PACKS kun je ook met nRF Connect
+(iOS/Android) lezen. Een Pukk kan twee verbindingen tegelijk hebben: een app
+of tool, en een andere Pukk.
 
 ## UI bekijken zonder bord
 
@@ -288,7 +297,8 @@ components/board/     dunne hardwarelaag: I2C, PMU, scherm, touch, knoppen
                       (pinnen per bordvariant in board_config.h)
 components/ui/        LVGL-port (taak + mutex), huisstijl (ui_theme) en schermen
 components/ui/assets/ gegenereerde fonts en vormen (tools/assets/)
-components/ble/       NimBLE GATT-service en uploadprotocol
+components/ble/       NimBLE GATT-service, uploadprotocol en central-rol (battle)
+components/battle/    battle-modus: spelregels, berichten en de engine-taak
 components/storage/   LittleFS-partitie "packs" op /packs
 components/packs/     .pukk-formaat (reader) en packopslag
 app/                  web-app: editor, server (Hono + SQLite), Web Bluetooth
