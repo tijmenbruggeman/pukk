@@ -52,7 +52,8 @@ typedef struct {
 } reg_setting_t;
 
 static const reg_setting_t s_init_settings[] = {
-    /* As XPowersLib begin(): there is no NTC on the battery, so ignore the TS pin. */
+    /* As XPowersLib begin() in the Waveshare demos: no TS pin measurement, even
+     * though the board has a 10k NTC (RP2) on TS. See docs/NOTES.md. */
     { REG_ADC_CTRL,          BIT(1), 0 },
 
     /* Waveshare demo settings (Custom_PmicRegisterInit). */
