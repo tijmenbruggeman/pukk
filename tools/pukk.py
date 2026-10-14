@@ -50,7 +50,11 @@ CTRL_UUID, DATA_UUID, INFO_UUID, PACKS_UUID = (
     f"8e41{n:04x}-0580-4871-83bd-51273ef66407" for n in (2, 3, 4, 5))
 
 OP_BEGIN, OP_END, OP_ABORT, OP_DELETE, OP_DATA = 0x01, 0x02, 0x03, 0x04, 0x10
-RSP_OK, RSP_PROGRESS, RSP_ERROR = 0x80, 0x81, 0x8F
+RSP_OK, RSP_PROGRESS, RSP_RESEND, RSP_ERROR = 0x80, 0x81, 0x82, 0x8F
+
+UPLOAD_WINDOW = 8 * 1024    # unacknowledged bytes in flight
+UPLOAD_STALL_S = 2.0        # no progress for this long: resend from the last ack
+UPLOAD_MAX_STALLS = 5
 DEVICE_ERRORS = {
     1: "busy: another upload is in progress",
     2: "invalid request",
@@ -245,14 +249,18 @@ class Link:
     def __init__(self, client) -> None:
         self.client = client
         self.queue: asyncio.Queue[bytes] = asyncio.Queue()
-        self.received = 0
+        self.received = 0               # last PROGRESS from the device
+        self.resend_from: int | None = None  # set by RESEND
 
     async def start(self) -> None:
         await self.client.start_notify(CTRL_UUID, lambda _c, data: self.queue.put_nowait(bytes(data)))
 
     def _handle(self, msg: bytes, op: int) -> bytes | None:
         if msg[0] == RSP_PROGRESS and len(msg) >= 5:
-            self.received = struct.unpack_from("<I", msg, 1)[0]
+            self.received = max(self.received, struct.unpack_from("<I", msg, 1)[0])
+        elif msg[0] == RSP_RESEND and len(msg) >= 5:
+            self.resend_from = struct.unpack_from("<I", msg, 1)[0]
+            self.received = max(self.received, self.resend_from)
         elif msg[0] == RSP_ERROR and len(msg) >= 3:
             raise PackError(f"device: {DEVICE_ERRORS.get(msg[2], f'error {msg[2]}')}")
         elif msg[0] == RSP_OK and len(msg) >= 2 and msg[1] == op:
@@ -271,6 +279,15 @@ class Link:
         while not self.queue.empty():
             self._handle(self.queue.get_nowait(), -1)
 
+    async def wait_notification(self, timeout: float) -> bool:
+        """Handle the next notification; False if none came within `timeout`."""
+        try:
+            msg = await asyncio.wait_for(self.queue.get(), timeout)
+        except (TimeoutError, asyncio.TimeoutError):
+            return False
+        self._handle(msg, -1)
+        return True
+
 
 async def with_device(args: argparse.Namespace, action):
     from bleak import BleakClient
@@ -287,7 +304,22 @@ def progress_bar(done: int, total: int) -> None:
           file=sys.stderr, flush=True)
 
 
+async def wait_until_can_send(client) -> None:
+    """macOS: CoreBluetooth drops writes without response when its queue is
+    full, and bleak does not wait for room. Poll the flag ourselves."""
+    peripheral = getattr(getattr(client, "_backend", None), "_peripheral", None)
+    can_send = getattr(peripheral, "canSendWriteWithoutResponse", None)
+    if can_send is None:
+        return
+    for _ in range(200):
+        if can_send():
+            return
+        await asyncio.sleep(0.005)
+
+
 async def upload(client, data: bytes, name: str) -> None:
+    """Send `data` with at most UPLOAD_WINDOW bytes unacknowledged. Lost writes
+    are recovered from RESEND, or after a stall from the last PROGRESS."""
     link = Link(client)
     await link.start()
     begin = struct.pack("<BIIB", OP_BEGIN, len(data), zlib.crc32(data), len(name)) + name.encode()
@@ -297,11 +329,28 @@ async def upload(client, data: bytes, name: str) -> None:
         chunk = min(chunk, client.mtu_size - 3 - 4)
 
     try:
-        for offset in range(0, len(data), chunk):
-            payload = struct.pack("<I", offset) + data[offset:offset + chunk]
-            await client.write_gatt_char(DATA_UUID, payload, response=False)
+        offset = 0
+        stalls = 0
+        while link.received < len(data):
             link.poll()
-            progress_bar(min(offset + chunk, len(data)), len(data))
+            if link.resend_from is not None:
+                offset, link.resend_from = link.resend_from, None
+            if offset < len(data) and offset - link.received < UPLOAD_WINDOW:
+                await wait_until_can_send(client)
+                payload = struct.pack("<I", offset) + data[offset:offset + chunk]
+                await client.write_gatt_char(DATA_UUID, payload, response=False)
+                offset += len(payload) - 4
+                progress_bar(link.received, len(data))
+                continue
+            # Window full or everything sent: wait for the device to catch up.
+            if await link.wait_notification(UPLOAD_STALL_S):
+                stalls = 0
+            else:
+                stalls += 1
+                if stalls > UPLOAD_MAX_STALLS:
+                    raise PackError("upload stalled")
+                offset = link.received
+            progress_bar(link.received, len(data))
         print(file=sys.stderr)
         await link.request(bytes([OP_END]), timeout=30.0)
     except BaseException:

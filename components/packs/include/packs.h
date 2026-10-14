@@ -49,8 +49,9 @@ bool packs_name_valid(const char *name, size_t len);
 /* Fill `entries` with valid packs, sorted by name. Returns the count. */
 size_t packs_list(packs_entry_t *entries, size_t max);
 
-/* Verify a pack completely (CRC, every question) and return its details. */
-packs_err_t packs_check(const char *name, packs_entry_t *info);
+/* Title, size and question count from the header. Packs are verified
+ * completely on upload; questions are checked again when read. */
+packs_err_t packs_info(const char *name, packs_entry_t *info);
 
 packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_t *question);
 

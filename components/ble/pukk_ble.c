@@ -29,6 +29,13 @@ static const char *TAG = "ble";
 #define PACKS_LIST_MAX      32
 #define ADV_INTERVAL_MIN_MS 100
 #define ADV_INTERVAL_MAX_MS 150
+/* Connection parameters within Apple's accessory guidelines. */
+#define CONN_ITVL_MIN_MS    15
+#define CONN_ITVL_MAX_MS    30
+#define CONN_TIMEOUT_MS     4000
+/* Largest link-layer payload and the airtime it needs on 1M PHY. */
+#define LL_MAX_OCTETS       251
+#define LL_MAX_TIME_US      2120
 
 static const ble_uuid128_t s_svc_uuid = PUKK_UUID128(0x0001);
 static const ble_uuid128_t s_ctrl_uuid = PUKK_UUID128(0x0002);
@@ -226,6 +233,45 @@ static const struct ble_gatt_svc_def s_services[] = {
     { 0 },
 };
 
+static void log_conn_params(uint16_t conn, const char *what)
+{
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) == 0) {
+        ESP_LOGI(TAG, "%s: interval %u.%02u ms, latency %u, timeout %u ms", what,
+                 desc.conn_itvl * 125 / 100, desc.conn_itvl * 125 % 100, desc.conn_latency,
+                 desc.supervision_timeout * 10);
+    }
+}
+
+/*
+ * Ask for a fast link for uploads. Without Data Length Extension every
+ * 244-byte write is split into ten 27-byte link-layer packets; 2M PHY halves
+ * the airtime and a short interval gives more transmit opportunities. The
+ * central decides; the results are logged from the GAP events.
+ */
+static void request_fast_link(uint16_t conn)
+{
+    int rc = ble_gap_set_data_len(conn, LL_MAX_OCTETS, LL_MAX_TIME_US);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "data length request failed (%d)", rc);
+    }
+    rc = ble_gap_set_prefered_le_phy(conn, BLE_GAP_LE_PHY_2M_MASK, BLE_GAP_LE_PHY_2M_MASK,
+                                     BLE_GAP_LE_PHY_CODED_ANY);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "PHY request failed (%d)", rc);
+    }
+    const struct ble_gap_upd_params params = {
+        .itvl_min = BLE_GAP_CONN_ITVL_MS(CONN_ITVL_MIN_MS),
+        .itvl_max = BLE_GAP_CONN_ITVL_MS(CONN_ITVL_MAX_MS),
+        .latency = 0,
+        .supervision_timeout = BLE_GAP_SUPERVISION_TIMEOUT_MS(CONN_TIMEOUT_MS),
+    };
+    rc = ble_gap_update_params(conn, &params);
+    if (rc != 0) {
+        ESP_LOGW(TAG, "connection parameter request failed (%d)", rc);
+    }
+}
+
 static int gap_event_cb(struct ble_gap_event *event, void *arg)
 {
     switch (event->type) {
@@ -233,6 +279,8 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
         if (event->connect.status == 0) {
             s_conn = event->connect.conn_handle;
             ESP_LOGI(TAG, "connected (handle %u)", s_conn);
+            log_conn_params(s_conn, "connection");
+            request_fast_link(s_conn);
             emit_simple(PUKK_BLE_EVENT_CONNECTED);
         } else {
             ESP_LOGW(TAG, "connect failed (status %d)", event->connect.status);
@@ -262,6 +310,20 @@ static int gap_event_cb(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %u", event->mtu.value);
+        break;
+
+    case BLE_GAP_EVENT_CONN_UPDATE:
+        log_conn_params(event->conn_update.conn_handle, "connection updated");
+        break;
+
+    case BLE_GAP_EVENT_PHY_UPDATE_COMPLETE:
+        ESP_LOGI(TAG, "PHY: tx %uM, rx %uM (status %d)", event->phy_updated.tx_phy,
+                 event->phy_updated.rx_phy, event->phy_updated.status);
+        break;
+
+    case BLE_GAP_EVENT_DATA_LEN_CHG:
+        ESP_LOGI(TAG, "data length: tx %u, rx %u bytes", event->data_len_chg.max_tx_octets,
+                 event->data_len_chg.max_rx_octets);
         break;
 
     default:

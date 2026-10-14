@@ -277,7 +277,7 @@ static void build_view(void)
 bool game_start(const char *pack_name)
 {
     packs_entry_t info;
-    packs_err_t err = packs_check(pack_name, &info);
+    packs_err_t err = packs_info(pack_name, &info);
     if (err != PACKS_OK) {
         ESP_LOGW(TAG, "cannot play %s: %s", pack_name, packs_err_name(err));
         return false;

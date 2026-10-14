@@ -111,6 +111,7 @@ antwoord.
 |---|---|---|
 | `0x80` | OK | `u8 request_opcode` + bij BEGIN: `u16 max_chunk` |
 | `0x81` | PROGRESS | `u32 received` |
+| `0x82` | RESEND | `u32 received` |
 | `0x8F` | ERROR | `u8 request_opcode, u8 code` |
 
 Fouten in DATA-writes melden `ERROR` met request_opcode `0x10`.
@@ -123,7 +124,7 @@ Foutcodes:
 | 2 | ongeldig verzoek (lengte, naam, opcode) |
 | 3 | niet genoeg ruimte |
 | 4 | geen upload actief |
-| 5 | data niet op volgorde |
+| 5 | data niet op volgorde (wordt als RESEND gemeld, niet als ERROR) |
 | 6 | grootte of CRC klopt niet |
 | 7 | geen geldig pack |
 | 8 | schrijf- of leesfout |
@@ -133,11 +134,18 @@ Foutcodes:
 
 1. `BEGIN(size, crc32, name)` → `OK(BEGIN, max_chunk)`.
 2. DATA-writes: `u32 offset` + maximaal `max_chunk` bytes data, op volgorde.
-   Een write die al ontvangen data herhaalt wordt genegeerd; een gat geeft
-   `ERROR(0x10, 5)` en breekt de upload af. Elke 4 KiB en aan het eind stuurt het
-   apparaat `PROGRESS(received)`.
-3. `END` → het apparaat controleert grootte, CRC en het packformaat, en
-   antwoordt `OK(END)` of `ERROR(END, code)`.
+   Elke 4 KiB en aan het eind stuurt het apparaat `PROGRESS(received)`.
+   - Houd hoogstens 8 KiB onbevestigd onderweg (offset − laatste PROGRESS).
+     Writes zonder response kunnen onderweg verloren gaan; CoreBluetooth
+     gooit ze bijvoorbeeld weg als zijn buffer vol is.
+   - Mist er data, dan negeert het apparaat wat erna komt en stuurt één keer
+     `RESEND(received)`: ga verder vanaf `received`. Data die het apparaat al
+     heeft wordt genegeerd, dus opnieuw sturen is altijd veilig.
+   - Komt er 2 s geen PROGRESS of RESEND terwijl er nog data onbevestigd is,
+     ga dan verder vanaf de laatste PROGRESS.
+3. Wacht op `PROGRESS(size)` en stuur dan `END` → het apparaat controleert
+   grootte, CRC en het packformaat, en antwoordt `OK(END)` of
+   `ERROR(END, code)`.
 
 `max_chunk` = ATT-MTU − 3 − 4. Een verbroken verbinding breekt een lopende
 upload af; de oude versie van het pack blijft dan staan.

@@ -16,6 +16,7 @@ enum {
     OP_DATA = 0x10,     /* only used in ERROR responses */
     RSP_OK = 0x80,
     RSP_PROGRESS = 0x81,
+    RSP_RESEND = 0x82,
     RSP_ERROR = 0x8F,
 };
 
@@ -24,6 +25,8 @@ enum {
 static char s_name[PACKS_NAME_MAX + 1];
 static uint32_t s_total;
 static uint32_t s_next_progress;
+/* Position of the last RESEND, so a burst of out-of-order writes asks once. */
+static uint32_t s_resend_at;
 
 static uint32_t get_u32(const uint8_t *p)
 {
@@ -98,6 +101,7 @@ static void handle_begin(const uint8_t *p, size_t n)
     }
     s_total = size;
     s_next_progress = PROGRESS_STEP;
+    s_resend_at = UINT32_MAX;
 
     uint16_t chunk = ble_max_chunk();
     const uint8_t rsp[] = { RSP_OK, OP_BEGIN, (uint8_t)chunk, (uint8_t)(chunk >> 8) };
@@ -181,13 +185,24 @@ void protocol_data_write(const uint8_t *data, size_t len)
         return;
     }
     packs_err_t err = packs_upload_write(get_u32(data), data + 4, len - 4);
+    uint32_t received = packs_upload_received();
+    if (err == PACKS_ERR_OUT_OF_ORDER) {
+        /* A write got lost on the way: ask the client to continue from here. */
+        if (s_resend_at != received) {
+            s_resend_at = received;
+            ESP_LOGW(TAG, "gap at %lu, asking for resend", (unsigned long)received);
+            uint8_t rsp[5] = { RSP_RESEND };
+            put_u32(rsp + 1, received);
+            ble_ctrl_notify(rsp, sizeof(rsp));
+        }
+        return;
+    }
     if (err != PACKS_OK) {
         send_error(OP_DATA, err);
         abort_upload(err);
         return;
     }
 
-    uint32_t received = packs_upload_received();
     if (received >= s_next_progress || received == s_total) {
         while (s_next_progress <= received) {
             s_next_progress += PROGRESS_STEP;

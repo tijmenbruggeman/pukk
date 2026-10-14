@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "storage.h"
 #include "packs.h"
 
@@ -49,13 +50,66 @@ static void pack_path(char *buf, const char *name)
     snprintf(buf, PATH_LEN, "%s/%s%s", STORAGE_PACKS_PATH, name, EXT);
 }
 
+/*
+ * Reading a pack means many small reads at two places at once: the question
+ * table and the string table. Two cached 512-byte windows (least recently used
+ * is replaced) turn most of them into memcpy instead of a filesystem call.
+ *
+ * Plain read() rather than stdio: newlib's fread on these files costs a VFS
+ * call per byte when unbuffered, or per 128 bytes with its default buffer,
+ * which made verifying a 71 KB pack take 4-15 s.
+ */
+#define CACHE_SLOT_SIZE 512
+
+typedef struct {
+    uint32_t base;
+    uint32_t len;
+    uint8_t data[CACHE_SLOT_SIZE];
+} cache_slot_t;
+
+typedef struct {
+    int fd;
+    cache_slot_t slot[2];
+    uint8_t lru;
+} reader_t;
+
+static bool read_at(int fd, uint32_t offset, void *buf, uint32_t len, uint32_t *got)
+{
+    if (lseek(fd, (off_t)offset, SEEK_SET) != (off_t)offset) {
+        return false;
+    }
+    ssize_t n = read(fd, buf, len);
+    if (n < 0) {
+        return false;
+    }
+    *got = (uint32_t)n;
+    return true;
+}
+
 static int file_read(void *ctx, uint32_t offset, void *buf, uint32_t len)
 {
-    FILE *f = ctx;
-    if (fseek(f, (long)offset, SEEK_SET) != 0) {
+    reader_t *r = ctx;
+    for (int i = 0; i < 2; i++) {
+        cache_slot_t *s = &r->slot[i];
+        if (s->len && offset >= s->base && (uint64_t)offset + len <= (uint64_t)s->base + s->len) {
+            memcpy(buf, s->data + (offset - s->base), len);
+            r->lru = (uint8_t)(i ^ 1);
+            return 0;
+        }
+    }
+    uint32_t got;
+    if (len > CACHE_SLOT_SIZE) {
+        return read_at(r->fd, offset, buf, len, &got) && got == len ? 0 : -1;
+    }
+    cache_slot_t *s = &r->slot[r->lru];
+    s->base = offset;
+    if (!read_at(r->fd, offset, s->data, CACHE_SLOT_SIZE, &s->len) || s->len < len) {
+        s->len = 0;
         return -1;
     }
-    return fread(buf, 1, len, f) == len ? 0 : -1;
+    memcpy(buf, s->data, len);
+    r->lru ^= 1;
+    return 0;
 }
 
 static packs_err_t map_pack_err(pack_err_t err)
@@ -66,8 +120,14 @@ static packs_err_t map_pack_err(pack_err_t err)
     return err == PACK_ERR_IO ? PACKS_ERR_IO : PACKS_ERR_INVALID_PACK;
 }
 
-/* Open the file at `path` and check its header. On success the caller closes *f. */
-static packs_err_t open_pack(const char *path, FILE **f, pack_t *pack)
+static void close_pack(reader_t *r)
+{
+    close(r->fd);
+    free(r);
+}
+
+/* Open the file at `path` and check its header. On success call close_pack(). */
+static packs_err_t open_pack(const char *path, reader_t **reader, pack_t *pack)
 {
     struct stat st;
     if (stat(path, &st) != 0) {
@@ -76,24 +136,30 @@ static packs_err_t open_pack(const char *path, FILE **f, pack_t *pack)
     if (st.st_size > PACK_MAX_FILE_SIZE) {
         return PACKS_ERR_INVALID_PACK;
     }
-    *f = fopen(path, "rb");
-    if (!*f) {
+    reader_t *r = calloc(1, sizeof(*r));
+    if (!r) {
         return PACKS_ERR_IO;
     }
-    packs_err_t err = map_pack_err(pack_open(pack, file_read, *f, (uint32_t)st.st_size));
-    if (err != PACKS_OK) {
-        fclose(*f);
-        *f = NULL;
+    r->fd = open(path, O_RDONLY);
+    if (r->fd < 0) {
+        free(r);
+        return PACKS_ERR_IO;
     }
-    return err;
+    packs_err_t err = map_pack_err(pack_open(pack, file_read, r, (uint32_t)st.st_size));
+    if (err != PACKS_OK) {
+        close_pack(r);
+        return err;
+    }
+    *reader = r;
+    return PACKS_OK;
 }
 
 /* Fill in title, size and question count; with `verify` also check everything. */
 static packs_err_t read_info(const char *path, packs_entry_t *info, bool verify)
 {
-    FILE *f;
+    reader_t *r;
     pack_t pack;
-    packs_err_t err = open_pack(path, &f, &pack);
+    packs_err_t err = open_pack(path, &r, &pack);
     if (err != PACKS_OK) {
         return err;
     }
@@ -103,7 +169,7 @@ static packs_err_t read_info(const char *path, packs_entry_t *info, bool verify)
     if (err == PACKS_OK && verify) {
         err = map_pack_err(pack_verify(&pack));
     }
-    fclose(f);
+    close_pack(r);
     return err;
 }
 
@@ -143,7 +209,7 @@ size_t packs_list(packs_entry_t *entries, size_t max)
     return count;
 }
 
-packs_err_t packs_check(const char *name, packs_entry_t *info)
+packs_err_t packs_info(const char *name, packs_entry_t *info)
 {
     if (!packs_name_valid(name, strlen(name))) {
         return PACKS_ERR_INVALID_ARG;
@@ -151,7 +217,7 @@ packs_err_t packs_check(const char *name, packs_entry_t *info)
     char path[PATH_LEN];
     pack_path(path, name);
     strcpy(info->name, name);
-    return read_info(path, info, true);
+    return read_info(path, info, false);
 }
 
 packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_t *question)
@@ -161,14 +227,14 @@ packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_
     }
     char path[PATH_LEN];
     pack_path(path, name);
-    FILE *f;
+    reader_t *r;
     pack_t pack;
-    packs_err_t err = open_pack(path, &f, &pack);
+    packs_err_t err = open_pack(path, &r, &pack);
     if (err != PACKS_OK) {
         return err;
     }
     pack_err_t perr = pack_read_question(&pack, index, question);
-    fclose(f);
+    close_pack(r);
     return perr == PACK_ERR_RANGE && index >= pack.question_count ? PACKS_ERR_NOT_FOUND
                                                                     : map_pack_err(perr);
 }
@@ -269,14 +335,19 @@ packs_err_t packs_upload_finish(void)
     s_upload.fd = -1;
     if (err == PACKS_OK &&
         (s_upload.received != s_upload.size || s_upload.crc != s_upload.expected_crc)) {
+        ESP_LOGW(TAG, "received %lu of %lu bytes, crc %08lx (expected %08lx)",
+                 (unsigned long)s_upload.received, (unsigned long)s_upload.size,
+                 (unsigned long)s_upload.crc, (unsigned long)s_upload.expected_crc);
         err = PACKS_ERR_MISMATCH;
     }
     if (err == PACKS_OK) {
+        int64_t start = esp_timer_get_time();
         packs_entry_t info;
         err = read_info(TEMP_PATH, &info, true);
         if (err == PACKS_ERR_NOT_FOUND) {
             err = PACKS_ERR_IO;
         }
+        ESP_LOGI(TAG, "verified in %lld ms", (esp_timer_get_time() - start) / 1000);
     }
     if (err == PACKS_OK) {
         char path[PATH_LEN];
