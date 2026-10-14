@@ -20,7 +20,7 @@
 static const char *TAG = "lvgl";
 
 #define DRAW_BUF_LINES      48  /* 480 x 48 px = 1/10 of the screen per buffer */
-#define TASK_STACK_SIZE     (8 * 1024)
+#define TASK_STACK_SIZE     (10 * 1024) /* ~5.6 KB used with the phase 2 UI */
 #define TASK_PRIORITY       4   /* below the NimBLE host task */
 #define TASK_MIN_DELAY_MS   1
 #define TASK_MAX_DELAY_MS   500

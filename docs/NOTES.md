@@ -105,7 +105,7 @@ Afwijkingen:
   `dependencies.lock` schrijft (alle componenten als `type: local`). 9.5 is ook
   de versie die Waveshare gebruikt.
 - Eigen port (`components/ui/lvgl_port.c`), geen `esp_lvgl_port` of
-  `esp_lvgl_adapter`: eigen FreeRTOS-taak (prio 4, 8 KB stack) en een
+  `esp_lvgl_adapter`: eigen FreeRTOS-taak (prio 4, 10 KB stack sinds fase 2) en een
   recursieve mutex (`ui_lock`/`ui_unlock`) rond alle `lv_*`-calls.
   `LV_USE_OS = NONE`.
 - Twee draw buffers van 480×48 px (2 × 46 080 B), `MALLOC_CAP_INTERNAL |
@@ -118,11 +118,11 @@ Afwijkingen:
   `CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS`), niet alleen de LVGL-taak. Dat
   gaat via `LV_SYSMON_GET_IDLE=ui_cpu_idle_percent` (zie
   `components/ui/CMakeLists.txt`).
-- Ook de memory monitor staat aan (linksonder): gebruik van de 64 KB LVGL-heap.
+- Ook de memory monitor (linksonder): gebruik van de 64 KB LVGL-heap. Sinds
+  fase 2 staan beide overlays standaard uit; BOOT zet ze aan.
 - `CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM` (stond aan bij Waveshare) staat uit:
   IRAM komt op de C6 uit hetzelfde 512 KB SRAM als de heap.
-- De Montserrat-fonts bevatten alleen ASCII; geen ë/é in schermteksten tot er
-  een eigen font is.
+- Fonts: zie fase 2 (Fredoka met Latin-1).
 
 ### BLE
 
@@ -252,12 +252,69 @@ Afwijkingen:
 - Stack nooit gebruikt: LVGL 3 848 van 8 192 B, BLE-host 3 752 van 6 144 B,
   main 4 680 van 6 144 B.
 
+## Fase 2: huisstijl
+
+Gekozen uit drie richtingen (speels, strak, quizshow): **speels**.
+
+### Stijl
+
+- Font **Fredoka** (SIL OFL, `components/ui/assets/Fredoka-OFL.txt`), Medium
+  voor tekst en SemiBold voor koppen: 20, 24, 28, 32 en 48 px plus een
+  woordmerk-font van 120 px met alleen "pukk". Latin-1 plus ‘ ’ “ ” – — • … €.
+  20 en 32 px bevatten ook de LVGL-symbolen die we gebruiken (batterij,
+  Bluetooth, bliksem, vinkje, kruis, pijl, ster).
+- Gegenereerd met `lv_font_conv` 1.5.3 uit google/fonts commit `a60a77e`
+  (variabel font, met fontTools vastgezet op gewicht 500/600), 4 bpp,
+  ongecomprimeerd zoals de ingebouwde LVGL-fonts. Script:
+  `tools/assets/gen_fonts.sh`.
+- Palet: zwart (AMOLED: pixels uit), geel `#FFD23F` als merkkleur, vlakken
+  `#1C1C24`/`#2A2A35`. Antwoorden hebben vaste kleur + vorm, zodat ze ook
+  zonder kleurzien te onderscheiden zijn: rood/driehoek, blauw/ruit,
+  oranje/cirkel, groen/vierkant. Tekst op oranje en groen is donker.
+- Vormen zijn A8-plaatjes (alleen alfa) die LVGL in elke kleur tekent:
+  `tools/assets/gen_shapes.py`.
+- Alles in `components/ui/ui_theme.[ch]`: kleuren, fonts, gedeelde styles.
+
+### Animaties zonder extra geheugen
+
+- Schermen schuiven 24 px omhoog (220 ms), knoppen tekenen 4 px kleiner
+  zolang je drukt, het goede antwoord en de score-sterren "poppen".
+- Alleen verplaatsen (`translate`) en tekengrootte (`transform_width/height`)
+  en `text_opa` op losse labels. Transparantie op een hele container zou
+  LVGL in een tussenlaag laten tekenen, uit de 64 KB LVGL-heap.
+
+### Statusbalk, opstartscherm, debug
+
+- Batterij uit de AXP2101 (fuel gauge), elke 30 s bijgewerkt; rood onder 15%
+  zonder lader. Bluetooth-icoon blauw zolang er een verbinding is.
+- Opstartscherm zodra LVGL draait, minstens 1,4 s, tot opslag, knoppen en BLE
+  klaar zijn.
+- FPS/CPU- en geheugenoverlays standaard verborgen; BOOT wisselt.
+
+### Preview-tool
+
+`tools/preview/` compileert LVGL 9.5 en `components/ui` voor de host met
+nep-packs, een nep-touchscreen (tikken op de tekst van een knop) en
+gesimuleerde tijd. Elk scherm wordt een PNG. Een volledige run duurt ~15 s.
+
+### Gemeten (board 2)
+
+- App 1,28 MB (+110 KB: Fredoka erin, Montserrat 24/40 eruit).
+- Heap na opstarten ongewijzigd: 197 KB vrij.
+- LVGL-taakstack: ~5,6 KB gebruikt na een spel (fase 1: ~4,3 KB). Stack van
+  8 naar 10 KB voor marge.
+
+### Flashen zonder NVS te wissen
+
+Een met `esptool merge_bin` samengevoegde image vult gaten op met `0xFF` en
+wist daarmee de NVS (o.a. RF-kalibratie, straks instellingen). Flash daarom
+de losse bestanden met `flash_args`, zoals `idf.py flash` doet.
+
 ## Roadmap
 
-- Fase 2: eigen font met Latin-1 (é, ë), daarna accenten niet meer omzetten in
-  `pukk.py`.
 - Fase 3/4: app die met de apparaten verbindt (gebruikt het protocol uit
   [PACKS.md](PACKS.md)).
+- Geluid (ES8311 + speaker) bij goed/fout/tijd.
 
 ## Geheugen: statisch (uit `idf.py size`)
 
@@ -297,8 +354,7 @@ opstarten vrijgeeft niet mee.
    maar SD-verkeer en schermupdates moeten dan om de bus delen.
 7. **LVGL-heap.** 64 KB is een gok; bijstellen met de memory monitor.
 8. **S3-variant.** Welk bord precies? Met PSRAM gelden andere geheugenkeuzes.
-9. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
-   Latin-1 genereren (lv_font_conv).
+
 
 ## Geheugen bij boot (gemeten)
 
@@ -331,8 +387,7 @@ Wat het kost:
 - Na alles is er **~200 KB** heap vrij, in één blok van 180 KB.
 
 Stacks (nooit gebruikt, na 60 s): main 4 556 van 6 144 B, LVGL 4 472 van
-8 192 B. Main kan terug naar 4 KB; LVGL houden we op 8 KB tot er meer schermen
-zijn.
+8 192 B. Main kan terug naar 4 KB. LVGL ging in fase 2 naar 10 KB (zie daar).
 
 Overige observaties uit dezelfde boot:
 

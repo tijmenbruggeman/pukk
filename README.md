@@ -22,6 +22,17 @@ Firmware voor Pukk, een handheld quizapparaat, op de
 
 Formaat en protocol: [docs/PACKS.md](docs/PACKS.md).
 
+**Fase 2** geeft Pukk een huisstijl ("speels"):
+
+- Font Fredoka met Latin-1 (é, ë, ü, …), zwart AMOLED-scherm, geel als
+  merkkleur en vier antwoordkleuren met elk een vorm (driehoek, ruit, cirkel,
+  vierkant).
+- Opstartscherm met het woordmerk, statusbalk met Bluetooth en batterij,
+  timer als ring, badges en een "pop" bij het antwoord, sterren bij de score,
+  schermen die even inschuiven.
+- De FPS/CPU- en geheugenoverlays staan uit; BOOT zet ze aan en uit.
+- Een preview-tool die de echte schermcode op de Mac naar PNG's rendert.
+
 Beslissingen en open vragen staan in [docs/NOTES.md](docs/NOTES.md).
 
 ## Documentatie
@@ -125,8 +136,8 @@ firmware niet vanzelf start.
 ## Packs maken en uploaden
 
 Een pack is een JSON-bestand, zie [packs/voorbeeld.json](packs/voorbeeld.json)
-en [docs/PACKS.md](docs/PACKS.md). Accenten (é, ë) worden tot fase 2 omgezet
-naar gewone letters.
+en [docs/PACKS.md](docs/PACKS.md). Tekst mag Latin-1 bevatten (é, ë, ü, ç,
+€, …); andere letters met een accent zet de tool om naar de basisletter.
 
 Eenmalig de Python-omgeving voor de tool (bleak voor Bluetooth):
 
@@ -160,7 +171,7 @@ tools/test_host.sh
 | Silkscreen | GPIO | Functie |
 |---|---|---|
 | IO10 | 10 | KEY: vanuit een spel terug naar de packlijst |
-| BOOT | 9 | downloadmodus (bij aanzetten), verder alleen gelogd |
+| BOOT | 9 | downloadmodus (bij aanzetten); daarna FPS/geheugen-overlays aan/uit |
 | PWR | PMU (gespiegeld op GPIO18) | aan/uit (lang drukken = uit), verder alleen gelogd |
 
 ## BLE
@@ -170,11 +181,29 @@ tools/test_host.sh
 | Service | `8e410001-0580-4871-83bd-51273ef66407` | |
 | CTRL | `8e410002-0580-4871-83bd-51273ef66407` | write, notify: verzoeken en antwoorden |
 | DATA | `8e410003-0580-4871-83bd-51273ef66407` | write without response: uploaddata |
-| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.2.0","flash_total":…,"flash_free":…}` |
+| INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.3.0","flash_total":…,"flash_free":…}` |
 | PACKS | `8e410005-0580-4871-83bd-51273ef66407` | read: JSON-lijst van de packs |
 
 Het protocol staat in [docs/PACKS.md](docs/PACKS.md). INFO en PACKS kun je ook
 met nRF Connect (iOS/Android) lezen.
+
+## UI bekijken zonder bord
+
+De preview compileert LVGL en `components/ui` voor de Mac, speelt alle
+schermen af met nep-packs en gesimuleerde tijd, en schrijft een PNG per
+scherm naar `build-preview/`. Nodig: een C-compiler, ImageMagick (`brew
+install imagemagick`) en `managed_components/` (na één `idf.py build`).
+
+```bash
+make -C tools/preview -j8 run
+```
+
+Fonts en vormen staan gegenereerd in `components/ui/assets/`. Opnieuw maken
+(bijv. voor een extra lettergrootte; nodig: node en python3):
+
+```bash
+tools/assets/gen_fonts.sh && python3 tools/assets/gen_shapes.py
+```
 
 ## Projectstructuur
 
@@ -182,11 +211,14 @@ met nRF Connect (iOS/Android) lezen.
 main/                 app_main: opstartvolgorde + heap-logging
 components/board/     dunne hardwarelaag: I2C, PMU, scherm, touch, knoppen
                       (pinnen per bordvariant in board_config.h)
-components/ui/        LVGL-port (taak + mutex) en schermen
+components/ui/        LVGL-port (taak + mutex), huisstijl (ui_theme) en schermen
+components/ui/assets/ gegenereerde fonts en vormen (tools/assets/)
 components/ble/       NimBLE GATT-service en uploadprotocol
 components/storage/   LittleFS-partitie "packs" op /packs
 components/packs/     .pukk-formaat (reader) en packopslag
 tools/pukk.py         packs bouwen en via BLE beheren
+tools/preview/        UI renderen op de Mac (PNG per scherm)
+tools/assets/         fonts en vormen opnieuw genereren
 packs/                voorbeeldpacks (JSON)
 partitions.csv        2× OTA 3 MB, coredump, packs 9,8 MB
 sdkconfig.defaults    alle afwijkingen van de IDF-defaults
