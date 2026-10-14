@@ -110,7 +110,7 @@ static void test_sample(blob_t *b)
     CHECK(strcmp(q.answers[1], "Mercurius") == 0, "q0 answer");
 
     CHECK(pack_read_question(&pack, 2, &q) == PACK_OK, "question 2");
-    CHECK(strcmp(q.text, "Wat is de hoofdstad van Belgie?") == 0, "accent stripped");
+    CHECK(strcmp(q.text, "Wat is de hoofdstad van Belgi\xc3\xab?") == 0, "accent kept (UTF-8)");
 
     CHECK(pack_read_question(&pack, 3, &q) == PACK_OK, "question 3");
     CHECK(q.answer_count == 2 && q.time_s == 10, "two answers, 10 s");

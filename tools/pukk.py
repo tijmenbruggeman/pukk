@@ -37,11 +37,12 @@ ANSWER_MAX = 32
 DEFAULT_TIME = 15
 MIN_TIME, MAX_TIME = 5, 60
 
-# Punctuation that NFKD does not reduce to ASCII.
-ASCII_REPLACEMENTS = {
-    "‘": "'", "’": "'", "“": '"', "”": '"',
-    "–": "-", "—": "-", "…": "...", " ": " ",
-}
+# Characters the device fonts contain besides Latin-1 (see supported()).
+# Keep in sync with TEXT in tools/assets/gen_fonts.sh.
+SUPPORTED_EXTRA = set("\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2026\u20ac")
+# Letters outside Latin-1 that Unicode does not decompose into base + accent.
+FALLBACKS = {"\u0141": "L", "\u0142": "l", "\u0110": "D", "\u0111": "d",
+             "\u0131": "i", "\u0152": "Oe", "\u0153": "oe"}
 
 NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 
@@ -72,19 +73,26 @@ class PackError(Exception):
     pass
 
 
-def to_ascii(text: str, where: str, warnings: list[str]) -> str:
-    """Until the device has a font with accents (phase 2), strip them."""
-    for src, dst in ASCII_REPLACEMENTS.items():
-        text = text.replace(src, dst)
-    if text.isascii():
+def supported(c: str) -> bool:
+    o = ord(c)
+    return c == "\n" or 0x20 <= o <= 0x7E or 0xA0 <= o <= 0xFF or c in SUPPORTED_EXTRA
+
+
+def check_charset(text: str, where: str, warnings: list[str]) -> str:
+    """Keep what the device fonts can draw; strip the accent from other
+    letters (e.g. Polish \u0142 is not in Latin-1) or refuse the text."""
+    if all(supported(c) for c in text):
         return text
-    stripped = "".join(c for c in unicodedata.normalize("NFKD", text)
-                       if not unicodedata.combining(c))
-    if not stripped.isascii():
-        bad = "".join(sorted({c for c in stripped if not c.isascii()}))
+    fixed = "".join(c if supported(c) else
+                    FALLBACKS.get(c) or
+                    "".join(d for d in unicodedata.normalize("NFKD", c)
+                            if not unicodedata.combining(d))
+                    for c in text)
+    bad = "".join(sorted({c for c in fixed if not supported(c)}))
+    if bad:
         raise PackError(f"{where}: characters the device cannot show: {bad!r}")
-    warnings.append(f"{where}: {text!r} -> {stripped!r}")
-    return stripped
+    warnings.append(f"{where}: {text!r} -> {fixed!r}")
+    return fixed
 
 
 class StringTable:
@@ -102,7 +110,7 @@ class StringTable:
 def check_text(value, where: str, limit: int, warnings: list[str]) -> str:
     if not isinstance(value, str) or not value.strip():
         raise PackError(f"{where}: must be a non-empty string")
-    text = to_ascii(value.strip(), where, warnings)
+    text = check_charset(value.strip(), where, warnings)
     if len(text.encode("utf-8")) > limit:
         raise PackError(f"{where}: longer than {limit} bytes: {text!r}")
     return text

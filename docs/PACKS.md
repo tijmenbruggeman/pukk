@@ -25,8 +25,10 @@ binaire `.pukk`-bestand dat het apparaat leest.
 
 - `answers`: 2 tot 4 antwoorden. `correct` is de index (vanaf 0).
 - `time`: seconden voor deze vraag, 5–60. Mag weg; standaard 15.
-- Tot fase 2 (eigen font) zet `build` letters met accenten om naar ASCII
-  (é → e) en waarschuwt daarbij.
+- Tekst is UTF-8. Het apparaat kan Latin-1 tekenen (é, ë, ü, ç, ß, …) plus
+  ‘ ’ “ ” – — • … €. Andere letters met een accent zet `build` om naar de
+  basisletter (met een waarschuwing); tekens zonder basisletter (emoji,
+  niet-Latijns schrift) worden geweigerd.
 
 Limieten (in bytes UTF-8, zonder afsluitende 0):
 
