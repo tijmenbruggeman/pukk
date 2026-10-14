@@ -3,17 +3,24 @@
 Firmware voor Pukk, een handheld quizapparaat, op de
 **Waveshare ESP32-C6-Touch-AMOLED-2.16**.
 
-Fase 0 is de hardware-basis:
+**Fase 0** is de hardware-basis:
 
 - AXP2101 (PMU) initialiseren; accuspanning en laadstatus loggen (bij boot en
   elke 30 s).
 - 2,16" AMOLED (480×480, CO5300 via QSPI) en touch werkend met LVGL 9, met
   FPS/CPU- en geheugenoverlay.
-- Testscherm: één vraag, vier antwoordknoppen, timerbalk van 15 s, goed/fout.
-- KEY-knop (IO10) start de vraag opnieuw.
-- BLE (NimBLE): adverteert als `Pukk-XXXX` met een eigen GATT-service
-  (CTRL/DATA/INFO). Nog geen packoverdracht.
+- BLE (NimBLE): adverteert als `Pukk-XXXX` met een eigen GATT-service.
 - Na elke init-stap wordt de vrije heap gelogd.
+
+**Fase 1** voegt quizpacks toe:
+
+- Packs schrijf je als JSON; `tools/pukk.py` zet ze om naar het compacte
+  `.pukk`-formaat en uploadt ze via Bluetooth.
+- Het apparaat bewaart packs in de flash (`/packs`), toont ze in een lijst en
+  speelt ze: vraag voor vraag met timer, 2–4 antwoorden, score aan het eind.
+- KEY (IO10) gaat vanuit een spel terug naar de lijst.
+
+Formaat en protocol: [docs/PACKS.md](docs/PACKS.md).
 
 Beslissingen en open vragen staan in [docs/NOTES.md](docs/NOTES.md).
 
@@ -115,11 +122,44 @@ omdat de firmware crasht of de USB-poort niet verschijnt):
 Na het flashen in downloadmodus het bord nog een keer uit/aan zetten als de
 firmware niet vanzelf start.
 
+## Packs maken en uploaden
+
+Een pack is een JSON-bestand, zie [packs/voorbeeld.json](packs/voorbeeld.json)
+en [docs/PACKS.md](docs/PACKS.md). Accenten (é, ë) worden tot fase 2 omgezet
+naar gewone letters.
+
+Eenmalig de Python-omgeving voor de tool (bleak voor Bluetooth):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+```
+
+Uploaden. Zonder `--device` neemt de tool het eerste Pukk-apparaat dat hij
+vindt; de naam staat bovenaan de packlijst op het scherm:
+
+```bash
+.venv/bin/python tools/pukk.py upload packs/voorbeeld.json --device Pukk-EA66
+```
+
+Overige commando's: `scan`, `list`, `info`, `delete <naam>`, `build` (JSON →
+`.pukk`) en `inspect` (`.pukk` controleren).
+
+**macOS:** draai de BLE-commando's in **Terminal** of iTerm2. macOS koppelt
+Bluetooth-toegang aan de terminal-app; Warp en het terminalpaneel van de
+Claude-app declareren geen Bluetooth-gebruik, en dan wordt Python direct
+gestopt (crash met `Namespace TCC`).
+
+Tests zonder hardware (packformaat, met AddressSanitizer):
+
+```bash
+tools/test_host.sh
+```
+
 ## Knoppen
 
-| Silkscreen | GPIO | Functie in fase 0 |
+| Silkscreen | GPIO | Functie |
 |---|---|---|
-| IO10 | 10 | KEY: vraag opnieuw starten |
+| IO10 | 10 | KEY: vanuit een spel terug naar de packlijst |
 | BOOT | 9 | downloadmodus (bij aanzetten), verder alleen gelogd |
 | PWR | PMU (gespiegeld op GPIO18) | aan/uit (lang drukken = uit), verder alleen gelogd |
 
@@ -128,12 +168,13 @@ firmware niet vanzelf start.
 | | UUID | Eigenschappen |
 |---|---|---|
 | Service | `8e410001-0580-4871-83bd-51273ef66407` | |
-| CTRL | `8e410002-0580-4871-83bd-51273ef66407` | write, notify (skelet: stuurt elke write terug) |
-| DATA | `8e410003-0580-4871-83bd-51273ef66407` | write without response (skelet: telt bytes) |
+| CTRL | `8e410002-0580-4871-83bd-51273ef66407` | write, notify: verzoeken en antwoorden |
+| DATA | `8e410003-0580-4871-83bd-51273ef66407` | write without response: uploaddata |
 | INFO | `8e410004-0580-4871-83bd-51273ef66407` | read: `{"fw":"0.1.0","flash_total":…,"flash_free":…}` |
+| PACKS | `8e410005-0580-4871-83bd-51273ef66407` | read: JSON-lijst van de packs |
 
-Testen kan met nRF Connect (iOS/Android): scan naar `Pukk-XXXX`, verbinden,
-INFO lezen, notificaties op CTRL aanzetten en iets naar CTRL schrijven.
+Het protocol staat in [docs/PACKS.md](docs/PACKS.md). INFO en PACKS kun je ook
+met nRF Connect (iOS/Android) lezen.
 
 ## Projectstructuur
 
@@ -142,8 +183,11 @@ main/                 app_main: opstartvolgorde + heap-logging
 components/board/     dunne hardwarelaag: I2C, PMU, scherm, touch, knoppen
                       (pinnen per bordvariant in board_config.h)
 components/ui/        LVGL-port (taak + mutex) en schermen
-components/ble/       NimBLE GATT-service
+components/ble/       NimBLE GATT-service en uploadprotocol
 components/storage/   LittleFS-partitie "packs" op /packs
+components/packs/     .pukk-formaat (reader) en packopslag
+tools/pukk.py         packs bouwen en via BLE beheren
+packs/                voorbeeldpacks (JSON)
 partitions.csv        2× OTA 3 MB, coredump, packs 9,8 MB
 sdkconfig.defaults    alle afwijkingen van de IDF-defaults
 ```

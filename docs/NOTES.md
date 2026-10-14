@@ -133,9 +133,8 @@ Afwijkingen:
   de naam in de scan response (samen passen ze niet in 31 bytes).
 - UUID's: service `8e410001-0580-4871-83bd-51273ef66407`, CTRL `…0002…`,
   DATA `…0003…`, INFO `…0004…` (alleen het 3e/4e byte verschilt).
-- CTRL (write + notify): skelet stuurt elke write terug als notificatie.
-  DATA (write without response): alleen tellen, totaal in de log bij
-  disconnect. INFO (read): `{"fw":"0.1.0","flash_total":N,"flash_free":N}` in
+- Characteristics en protocol: zie [PACKS.md](PACKS.md) en hieronder bij
+  fase 1. INFO (read): `{"fw":"0.1.0","flash_total":N,"flash_free":N}` in
   bytes, gemeten op de LittleFS-partitie `packs`.
 - Voorkeurs-MTU 247 (past met Data Length Extension in één link-layer-pakket).
 - Advertising-interval 100–150 ms.
@@ -164,6 +163,102 @@ Afwijkingen:
   daarmee kunnen beide later omlaag.
 - LVGL-voorbeelden en -demo's worden niet meegebouwd.
 
+## Fase 1: packs
+
+### Formaat
+
+- JSON als bronformaat (makkelijk te schrijven), op het apparaat een eigen
+  binair formaat `.pukk` (zie [PACKS.md](PACKS.md)). JSON op het apparaat
+  parsen kost te veel RAM: een pack van 1000 vragen zou als cJSON-boom al snel
+  100+ KB worden. Het binaire formaat leest één vraag tegelijk direct uit
+  flash (vaste vragentabel + stringtabel).
+- Vragen max. 120 bytes en antwoorden max. 32 bytes: meer past niet met font 24
+  in het vraagvlak en de knoppen.
+- 2 tot 4 antwoorden; tijd per vraag 5–60 s (standaard 15).
+- De reader (`components/packs/pack_format.c`) vertrouwt geen enkele offset uit
+  het bestand en heeft geen ESP-IDF-afhankelijkheden. De host-test
+  (`tools/test_host.sh`) draait hem met ASan/UBSan tegen elk bestand met één
+  beschadigde byte, alle afgekapte versies en 20 000 willekeurig beschadigde
+  packs met een kloppende CRC.
+
+### Upload via BLE
+
+- Eén verzoek tegelijk op CTRL, data op DATA met een offset in elk pakket.
+  Herhaalde data wordt genegeerd, een gat breekt de upload af. CRC-32 over het
+  hele bestand in BEGIN; het apparaat controleert bij END grootte, CRC en het
+  volledige packformaat.
+- De upload schrijft naar `/packs/.upload` en hernoemt pas na controle. Een
+  afgebroken upload (ook door een reset) laat het oude pack staan.
+- De packlijst is een leesbare characteristic (PACKS, JSON) in plaats van een
+  reeks notificaties: een lange read regelt NimBLE zelf, terwijl tientallen
+  notificaties achter elkaar de buffers van de stack kunnen laten overlopen.
+- Geen pairing: iedereen in de buurt kan uploaden. Zie open vragen.
+- Uploaden gebeurt in de NimBLE-hosttaak (schrijven + controleren op flash);
+  daarom is die stack 6 KB. Gemeten: ~2,4 KB gebruikt.
+- Writes zonder response kunnen verloren gaan: bleak wacht op macOS niet op
+  CoreBluetooth's `canSendWriteWithoutResponse`, en CoreBluetooth gooit
+  writes weg als zijn buffer vol is. Eerste test met 71 KB: de staart ging
+  verloren. Daarom een venster van 8 KiB, `RESEND` bij een gat, hervatten na
+  2 s stilte, en END pas na `PROGRESS(size)`. De tool pollt daarnaast zelf
+  `canSendWriteWithoutResponse` (via een interne bleak-variabele, met fallback).
+- Na het verbinden vraagt het apparaat om Data Length Extension (251), 2M PHY
+  en een interval van 15–30 ms. macOS gaf: DLE 251, 2M PHY, interval 30 ms.
+
+### UI
+
+- Home = packlijst met de BLE-naam bovenaan. Spel: vraag voor vraag, na een
+  antwoord 2 s feedback, dan de volgende; score aan het eind. KEY gaat van
+  spel naar lijst.
+- Vragen worden één voor één uit flash gelezen (~9 ms per vraag); een pack dat
+  tijdens het spelen wordt vervangen, wordt netjes afgesloten in plaats van te
+  crashen.
+- Een pack starten leest alleen de header. De volledige controle (CRC en elke
+  vraag) gebeurt bij de upload; elke vraag wordt bij het lezen opnieuw
+  gecontroleerd.
+
+### Packs lezen: geen stdio
+
+- Packs worden met `open`/`lseek`/`read` gelezen, met een eigen cache van twee
+  vensters van 512 bytes. Met `fopen`/`fread` kostte newlib een VFS-aanroep
+  per 128 bytes (standaardbuffer) of zelfs per byte (`_IONBF`). Gemeten op de
+  rekentest (71 KB, 1000 vragen): controleren duurde 15,2 s met `_IONBF`,
+  ~4 s met de standaardbuffer en 0,96 s met `read()`. De flash zelf leest
+  64 KB in 10 ms; LittleFS besteedde maar 16 ms aan flash-reads.
+- 15 s rekenen in de BLE-hosttaak liet de task-watchdog afgaan (IDLE kwam niet
+  meer aan de beurt). Bij 1 s speelt dat niet meer.
+- Van scherm wisselen gebeurt via `lv_async_call`, niet in de klik-callback
+  zelf: die verwijdert anders de knop waarvan het event nog loopt.
+- Het upload-venster staat op LVGL's top layer en blijft dus staan als het
+  scherm eronder wisselt.
+
+### Tool
+
+- `tools/pukk.py`: `build`/`inspect` zonder extra packages; `scan`, `info`,
+  `list`, `upload` en `delete` met bleak.
+- macOS: alleen vanuit Terminal of iTerm2. Warp en de shell van de Claude-app
+  hebben geen `NSBluetoothAlwaysUsageDescription`; macOS stopt Python dan met
+  een TCC-crash.
+
+### Gemeten (board 2, `Pukk-AF8E`)
+
+- Voorbeeldpack (667 bytes): upload incl. controle ~0,1 s na BEGIN; verbinding
+  op MTU 247. Gespeeld: 7 van 8 goed.
+- Rekentest (1000 vragen, 71 KB, `build-flash/rekentest.json`, gegenereerd):
+  datadeel ~16 s (~4,5 KB/s), geen verloren pakketten. Het apparaat schrijft
+  71 KB in 0,4 s, dus de rem zit aan de kant van de Mac (bleak/CoreBluetooth,
+  ~0,5 pakket per verbindingsinterval van 30 ms). Goed genoeg voor nu;
+  opnieuw bekijken met de app.
+- Heap na boot 197 KB vrij, laagste punt tijdens upload/spel 187 KB.
+- Stack nooit gebruikt: LVGL 3 848 van 8 192 B, BLE-host 3 752 van 6 144 B,
+  main 4 680 van 6 144 B.
+
+## Roadmap
+
+- Fase 2: eigen font met Latin-1 (é, ë), daarna accenten niet meer omzetten in
+  `pukk.py`.
+- Fase 3/4: app die met de apparaten verbindt (gebruikt het protocol uit
+  [PACKS.md](PACKS.md)).
+
 ## Geheugen: statisch (uit `idf.py size`)
 
 Stand na fase 0 (v0.1.0):
@@ -191,14 +286,18 @@ opstarten vrijgeeft niet mee.
 2. **Rommel bij opstarten?** De init-sequentie zet het scherm aan (0x29) vóór
    het eerste LVGL-frame. Als er kort ruis zichtbaar is: helderheid 0 tot het
    eerste frame.
-3. **BLE-beveiliging.** Moet packoverdracht later met pairing/bonding?
-4. **Firmware-update via BLE.** Willen we OTA? De partitietabel houdt er
+3. **Uploadsnelheid.** ~4,5 KB/s vanaf de Mac met bleak, terwijl link en
+   apparaat veel meer aankunnen. Bij de app meten met native
+   CoreBluetooth/Android-API's.
+4. **BLE-beveiliging.** Nu kan iedereen in de buurt packs uploaden en
+   verwijderen. Pairing/bonding toevoegen voor de app er is?
+5. **Firmware-update via BLE.** Willen we OTA? De partitietabel houdt er
    rekening mee.
-5. **Packs op SD-kaart?** De TF-slot deelt de SPI-bus met het scherm; kan,
+6. **Packs op SD-kaart?** De TF-slot deelt de SPI-bus met het scherm; kan,
    maar SD-verkeer en schermupdates moeten dan om de bus delen.
-6. **LVGL-heap.** 64 KB is een gok; bijstellen met de memory monitor.
-7. **S3-variant.** Welk bord precies? Met PSRAM gelden andere geheugenkeuzes.
-8. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
+7. **LVGL-heap.** 64 KB is een gok; bijstellen met de memory monitor.
+8. **S3-variant.** Welk bord precies? Met PSRAM gelden andere geheugenkeuzes.
+9. **Diakrieten.** Nederlandse vragen hebben é/ë nodig: eigen font met
    Latin-1 genereren (lv_font_conv).
 
 ## Geheugen bij boot (gemeten)
