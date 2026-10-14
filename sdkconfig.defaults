@@ -37,9 +37,9 @@ CONFIG_LV_USE_LOG=y
 CONFIG_LV_LOG_LEVEL_WARN=y
 CONFIG_LV_LOG_PRINTF=y
 CONFIG_LV_THEME_DEFAULT_DARK=y
+# UI fonts are Fredoka (components/ui/assets); Montserrat 14 is only for the
+# debug overlays.
 CONFIG_LV_FONT_MONTSERRAT_14=y
-CONFIG_LV_FONT_MONTSERRAT_24=y
-CONFIG_LV_FONT_MONTSERRAT_40=y
 # FPS/CPU overlay (bottom right) and LVGL heap overlay (bottom left).
 CONFIG_LV_USE_SYSMON=y
 CONFIG_LV_USE_PERF_MONITOR=y

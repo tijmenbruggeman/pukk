@@ -122,24 +122,30 @@ int main(void)
     lv_indev_set_read_cb(touch, read_cb);
 
     ui_set_device_name("Pukk-EA66");
+    ui_set_battery(82, false);
+    ui_show_splash();
+    run_ms(300);
+    snap("00-splash-rising");
+    run_ms(700);
+    snap("00-splash");
     ui_show_home();
-    run_ms(500);
+    run_ms(1000);
     snap("01-home");
 
     tap_text("Algemene kennis");
     run_ms(400);
     snap("02-question");
-    run_ms(6000);
-    snap("03-question-6s");
+    run_ms(9000);
+    snap("03-question-9s");
 
     tap_text("Venus");
-    run_ms(400);
+    run_ms(450);
     snap("04-reveal-wrong");
     run_ms(2000);
     snap("05-two-answers");
 
     tap_text("Ja");
-    run_ms(400);
+    run_ms(450);
     snap("06-reveal-good");
     run_ms(2000);
     snap("07-three-answers");
@@ -148,22 +154,28 @@ int main(void)
     snap("08-timeout");
     run_ms(2000);
     tap_text("8");
-    run_ms(2400);
+    run_ms(2600);
     snap("09-result");
 
-    ui_back();
+    tap_text("Terug");
     run_ms(500);
     ui_upload_progress("dieren", 3000, 7000);
-    run_ms(100);
+    run_ms(300);
     snap("10-upload");
     ui_upload_finished("dieren", 0);
-    run_ms(100);
+    run_ms(300);
     snap("11-upload-done");
 
     run_ms(3000);
+    ui_set_ble_connected(true);
+    ui_set_battery(9, false);
+    run_ms(100);
+    snap("12-home-ble-low-battery");
+
     fake_pack_count = 0;
+    ui_set_battery(45, true);
     ui_packs_changed();
     run_ms(300);
-    snap("12-empty");
+    snap("13-empty-charging");
     return 0;
 }

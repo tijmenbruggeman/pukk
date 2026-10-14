@@ -136,6 +136,24 @@ void ui_unlock(void)
     xSemaphoreGiveRecursive(s_lock);
 }
 
+void ui_toggle_debug(void)
+{
+#if LV_USE_SYSMON
+    static bool shown;
+    if (ui_lock(-1)) {
+        shown = !shown;
+        if (shown) {
+            lv_sysmon_show_performance(s_display);
+            lv_sysmon_show_memory(s_display);
+        } else {
+            lv_sysmon_hide_performance(s_display);
+            lv_sysmon_hide_memory(s_display);
+        }
+        ui_unlock();
+    }
+#endif
+}
+
 size_t ui_task_stack_free(void)
 {
     return s_task ? uxTaskGetStackHighWaterMark(s_task) : 0;
@@ -172,6 +190,12 @@ esp_err_t ui_init(void)
     lv_display_set_flush_wait_cb(s_display, flush_wait_cb);
     lv_display_add_event_cb(s_display, rounder_cb, LV_EVENT_INVALIDATE_AREA, NULL);
     ESP_RETURN_ON_ERROR(board_display_set_done_cb(flush_done_isr, NULL), TAG, "done cb failed");
+
+#if LV_USE_SYSMON
+    /* Debug overlays start hidden; BOOT toggles them (ui_toggle_debug). */
+    lv_sysmon_hide_performance(s_display);
+    lv_sysmon_hide_memory(s_display);
+#endif
 
     lv_indev_t *touch = lv_indev_create();
     lv_indev_set_type(touch, LV_INDEV_TYPE_POINTER);

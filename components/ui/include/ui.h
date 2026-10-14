@@ -28,14 +28,23 @@ void ui_unlock(void);
 /* Smallest amount of LVGL task stack that has stayed unused, in bytes. */
 size_t ui_task_stack_free(void);
 
-/* Show the pack list. */
+/* Wordmark while the rest of the device starts. Call right after ui_init(). */
+void ui_show_splash(void);
+
+/* Show the pack list (after the splash has been up for a moment). */
 void ui_show_home(void);
 
 /* KEY button: leave a game and return to the pack list. */
 void ui_back(void);
 
-/* BLE name shown on the pack list, so you know where to upload to. */
+/* Status bar: BLE name (so you know where to upload to), battery, link. */
 void ui_set_device_name(const char *name);
+/* percent < 0: no battery. */
+void ui_set_battery(int percent, bool charging);
+void ui_set_ble_connected(bool connected);
+
+/* Show or hide the FPS/CPU and memory overlays (hidden at start). */
+void ui_toggle_debug(void);
 
 /* Reload the pack list after an upload or delete. */
 void ui_packs_changed(void);

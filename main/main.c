@@ -55,6 +55,16 @@ static void on_button(board_button_t button, void *ctx)
 {
     if (button == BOARD_BUTTON_KEY) {
         ui_back();
+    } else if (button == BOARD_BUTTON_BOOT) {
+        ui_toggle_debug();
+    }
+}
+
+static void update_battery(void)
+{
+    board_power_status_t st;
+    if (board_pmu_get_status(&st) == ESP_OK) {
+        ui_set_battery(st.battery_present ? st.battery_percent : -1, st.charging);
     }
 }
 
@@ -64,6 +74,10 @@ static void on_ble_event(const pukk_ble_event_t *event, void *ctx)
     switch (event->type) {
     case PUKK_BLE_EVENT_READY:
         ui_set_device_name(pukk_ble_device_name());
+        break;
+    case PUKK_BLE_EVENT_CONNECTED:
+    case PUKK_BLE_EVENT_DISCONNECTED:
+        ui_set_ble_connected(event->type == PUKK_BLE_EVENT_CONNECTED);
         break;
     case PUKK_BLE_EVENT_UPLOAD_STARTED:
     case PUKK_BLE_EVENT_UPLOAD_PROGRESS:
@@ -83,6 +97,7 @@ static void on_ble_event(const pukk_ble_event_t *event, void *ctx)
 static void log_status(void)
 {
     board_pmu_log_status();
+    update_battery();
     TaskHandle_t ble_host = xTaskGetHandle("nimble_host");
     ESP_LOGI(TAG, "status: heap free %u, min ever %u, stack unused: main %u, lvgl %u, ble %u",
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
@@ -123,16 +138,19 @@ void app_main(void)
     log_heap("storage");
 
     ESP_ERROR_CHECK(ui_init());
+    ui_show_splash();
+    update_battery();
     log_heap("lvgl");
-
-    ui_show_home();
-    log_heap("ui");
 
     ESP_ERROR_CHECK_WITHOUT_ABORT(board_buttons_init(on_button, NULL));
     log_heap("buttons");
 
     ESP_ERROR_CHECK_WITHOUT_ABORT(pukk_ble_init(on_ble_event, NULL));
     log_heap("ble");
+
+    /* Everything is up: leave the splash screen. */
+    ui_show_home();
+    log_heap("ui");
 
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(STATUS_PERIOD_MS));
