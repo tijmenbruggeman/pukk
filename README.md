@@ -199,11 +199,15 @@ npm run dev:server
 npm run dev
 ```
 
-De productieversie lokaal (http://localhost:8080):
+De productieversie lokaal op de achtergrond (http://localhost:8080, alleen
+vanaf deze computer, wachtwoord `dev` tenzij je `PUKK_PASSWORD` zet):
 
 ```bash
-npm run build && PUKK_PASSWORD=test npm start
+bin/pukk-app start
 ```
+
+`bin/pukk-app stop` stopt hem; verder `restart`, `status` en `logs`. De packs
+blijven in `app/data`.
 
 Tests en typecheck:
 
@@ -316,6 +320,7 @@ components/packs/     .pukk-formaat (reader) en packopslag
 app/                  web-app: editor, server (Hono + SQLite), Web Bluetooth
 app/compose.yaml      deployment voor Docker Compose / Synology
 bin/flash-pukk        firmware flashen, met keuze uit gevonden Pukks
+bin/pukk-app          web-app lokaal starten en stoppen
 tools/pukk.py         packs bouwen en via BLE beheren
 tools/preview/        UI renderen op de Mac (PNG per scherm)
 tools/assets/         fonts en vormen opnieuw genereren

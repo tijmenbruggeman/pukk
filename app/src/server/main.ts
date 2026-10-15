@@ -6,6 +6,7 @@
  *   PUKK_SECRET      optional; signs session cookies (default: a random
  *                    secret kept in the data directory)
  *   PORT             default 8080
+ *   HOST             address to listen on (default: all interfaces)
  */
 import { serve } from '@hono/node-server';
 import { randomBytes } from 'node:crypto';
@@ -46,8 +47,9 @@ const app = createApp({
 });
 
 const port = Number(process.env.PORT ?? 8080);
-const server = serve({ fetch: app.fetch, port }, () => {
-  console.log(`pukk app listening on :${port} (data in ${dataDir})`);
+const hostname = process.env.HOST || undefined;
+const server = serve({ fetch: app.fetch, port, hostname }, () => {
+  console.log(`pukk app listening on ${hostname ?? ''}:${port} (data in ${dataDir})`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
