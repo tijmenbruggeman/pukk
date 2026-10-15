@@ -226,6 +226,9 @@ Twee optionele instellingen bepalen hoe een spel loopt:
 volgorde. In een battle krijgen beide spelers dezelfde vragen. In de web-app
 staan ze onder de titel.
 
+Een pack laten maken door een AI: zie de prompt in
+[docs/AI-PROMPT.md](docs/AI-PROMPT.md).
+
 Eenmalig de Python-omgeving voor de tool (bleak voor Bluetooth):
 
 ```bash
