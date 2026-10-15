@@ -116,6 +116,136 @@ static void test_sample(blob_t *b)
     CHECK(q.answer_count == 2 && q.time_s == 10, "two answers, 10 s");
 
     CHECK(pack_read_question(&pack, 8, &q) == PACK_ERR_RANGE, "index past end");
+    CHECK(pack.index_offset == PACK_HEADER_SIZE + PACK_HEADER_EXT_SIZE, "header extension written");
+    CHECK(pack.flags == 0 && pack.per_game == 0, "defaults: all questions, in order");
+}
+
+static void put_u16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void put_u32(uint8_t *p, uint32_t v)
+{
+    for (int i = 0; i < 4; i++) {
+        p[i] = (uint8_t)(v >> (8 * i));
+    }
+}
+
+static uint32_t get_u32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+/* The options are read from the flags and the header extension. */
+static void test_options(const blob_t *orig)
+{
+    blob_t b = { malloc(orig->size), orig->size };
+    memcpy(b.data, orig->data, orig->size);
+    b.data[5] = PACK_FLAG_RANDOM_ORDER;
+    put_u16(b.data + PACK_HEADER_SIZE, 3);
+    fix_crc(&b);
+
+    pack_t pack;
+    CHECK(pack_open(&pack, blob_read, &b, b.size) == PACK_OK && pack_verify(&pack) == PACK_OK, "open with options");
+    CHECK(pack.flags == PACK_FLAG_RANDOM_ORDER && pack.per_game == 3, "options read");
+    free(b.data);
+}
+
+/* Packs from before the extension: questions right after a 32-byte header. */
+static void test_old_layout(const blob_t *orig)
+{
+    const uint32_t ext = PACK_HEADER_EXT_SIZE;
+    blob_t b = { malloc(orig->size - ext), orig->size - ext };
+    memcpy(b.data, orig->data, PACK_HEADER_SIZE);
+    memcpy(b.data + PACK_HEADER_SIZE, orig->data + PACK_HEADER_SIZE + ext, orig->size - PACK_HEADER_SIZE - ext);
+    put_u32(b.data + 8, b.size);
+    put_u32(b.data + 16, get_u32(b.data + 16) - ext);
+    put_u32(b.data + 20, get_u32(b.data + 20) - ext);
+    fix_crc(&b);
+
+    pack_t pack;
+    CHECK(pack_open(&pack, blob_read, &b, b.size) == PACK_OK && pack_verify(&pack) == PACK_OK, "open old layout");
+    CHECK(pack.per_game == 0 && pack.index_offset == PACK_HEADER_SIZE, "old layout: all questions");
+    pack_question_t q;
+    CHECK(pack_read_question(&pack, 0, &q) == PACK_OK && strcmp(q.answers[1], "Mercurius") == 0,
+          "old layout question");
+    free(b.data);
+}
+
+static uint32_t s_seed;
+
+static uint32_t test_random(void)
+{
+    s_seed = s_seed * 1103515245u + 12345u;
+    return s_seed >> 8;
+}
+
+/* Every index at most once and in range; returns false otherwise. */
+static bool distinct(const uint16_t *order, uint16_t k, uint16_t n)
+{
+    static bool seen[PACK_MAX_QUESTIONS];
+    memset(seen, 0, sizeof(seen));
+    for (uint16_t i = 0; i < k; i++) {
+        if (order[i] >= n || seen[order[i]]) {
+            return false;
+        }
+        seen[order[i]] = true;
+    }
+    return true;
+}
+
+static void test_game_order(void)
+{
+    static uint16_t order[PACK_MAX_QUESTIONS];
+    pack_t pack = { .question_count = 10 };
+
+    /* Default: everything in pack order. */
+    CHECK(pack_game_order(&pack, test_random, order) == 10, "all questions");
+    bool identity = true;
+    for (uint16_t i = 0; i < 10; i++) {
+        identity &= order[i] == i;
+    }
+    CHECK(identity, "in pack order");
+
+    /* A pick, in pack order; different picks across games. */
+    pack.per_game = 4;
+    bool varied = false;
+    uint16_t first[4];
+    for (int game = 0; game < 20; game++) {
+        CHECK(pack_game_order(&pack, test_random, order) == 4, "four questions");
+        CHECK(distinct(order, 4, 10), "pick without repeats");
+        CHECK(order[0] < order[1] && order[1] < order[2] && order[2] < order[3], "pick in pack order");
+        if (game == 0) {
+            memcpy(first, order, sizeof(first));
+        } else {
+            varied |= memcmp(first, order, sizeof(first)) != 0;
+        }
+    }
+    CHECK(varied, "picks differ between games");
+
+    /* More asked than there are: all of them. */
+    pack.per_game = 50;
+    CHECK(pack_game_order(&pack, test_random, order) == 10, "capped at the pack size");
+
+    /* Shuffled: all of them, not (always) in order. */
+    pack.per_game = 0;
+    pack.flags = PACK_FLAG_RANDOM_ORDER;
+    bool shuffled = false;
+    for (int game = 0; game < 5; game++) {
+        CHECK(pack_game_order(&pack, test_random, order) == 10 && distinct(order, 10, 10), "shuffled, complete");
+        for (uint16_t i = 0; i < 10; i++) {
+            shuffled |= order[i] != i;
+        }
+    }
+    CHECK(shuffled, "shuffled order differs from pack order");
+
+    /* The largest pack. */
+    pack.question_count = PACK_MAX_QUESTIONS;
+    pack.per_game = 20;
+    CHECK(pack_game_order(&pack, test_random, order) == 20 && distinct(order, 20, PACK_MAX_QUESTIONS),
+          "20 of 1000");
 }
 
 static void test_corruption(const blob_t *orig)
@@ -162,6 +292,9 @@ int main(int argc, char **argv)
     blob_t sample = load(argv[1]);
     test_crc();
     test_sample(&sample);
+    test_options(&sample);
+    test_old_layout(&sample);
+    test_game_order();
     test_corruption(&sample);
     free(sample.data);
 

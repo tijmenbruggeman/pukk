@@ -12,6 +12,8 @@ binaire `.pukk`-bestand dat het apparaat leest.
 ```json
 {
   "title": "Algemene kennis",
+  "questions_per_game": 20,
+  "order": "random",
   "questions": [
     {
       "question": "Welke planeet staat het dichtst bij de zon?",
@@ -23,6 +25,13 @@ binaire `.pukk`-bestand dat het apparaat leest.
 }
 ```
 
+- `questions_per_game`: hoeveel vragen één spel heeft, 1–1000. Mag weg: dan
+  alle vragen. Heeft het pack meer vragen, dan kiest het apparaat er per spel
+  willekeurig zoveel uit; heeft het er minder, dan worden het er zoveel.
+- `order`: `"sequential"` (op volgorde van het pack, standaard) of `"random"`
+  (door elkaar). Bij `"sequential"` met een selectie komen de gekozen vragen
+  in packvolgorde.
+- In een battle kiest de host de vragen; beide spelers krijgen dezelfde.
 - `answers`: 2 tot 4 antwoorden. `correct` is de index (vanaf 0).
 - `time`: seconden voor deze vraag, 5–60. Mag weg; standaard 15.
 - Tekst is UTF-8. Het apparaat kan Latin-1 tekenen (é, ë, ü, ç, ß, …) plus
@@ -46,15 +55,20 @@ Limieten (in bytes UTF-8, zonder afsluitende 0):
 Header, 32 bytes
   0   char[4]  magic          "PUKK"
   4   u8       version        1
-  5   u8       flags          0
+  5   u8       flags          bit 0: vragen door elkaar (order "random");
+                              overige bits 0
   6   u16      question_count
   8   u32      file_size      hele bestand, in bytes
   12  u32      crc32          CRC-32 (IEEE, zoals zlib.crc32) van het hele
                               bestand, berekend met dit veld op 0
-  16  u32      index_offset   begin van de vragentabel (32)
+  16  u32      index_offset   begin van de vragentabel (36; oudere packs 32)
   20  u32      strings_offset begin van de stringtabel
   24  u32      strings_size
   28  u32      title          stringoffset van de titel
+
+Header-extensie, alleen als index_offset >= 36
+  32  u16      per_game       vragen per spel; 0 = alle
+  34  u16      reserved       0
 
 Vragentabel, question_count × 24 bytes, vanaf index_offset
   0   u32      text           stringoffset
@@ -72,6 +86,12 @@ Stringtabel, strings_size bytes, vanaf strings_offset
 `strings_offset + strings_size == file_size`. Het apparaat controleert bij
 upload en bij het starten van een pack de header, alle offsets en limieten en
 de CRC.
+
+De flags en de header-extensie zijn later toegevoegd zonder het
+versienummer op te hogen: firmware van vóór 0.5 controleert `flags` niet en
+slaat alles tot `index_offset` over, en speelt zulke packs dus gewoon (alle
+vragen, op volgorde). Packs zonder extensie (`index_offset` 32) gelden als
+alle vragen, op volgorde.
 
 ## BLE-protocol
 

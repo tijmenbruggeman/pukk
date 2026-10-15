@@ -45,6 +45,14 @@ describe('encodePack', () => {
     expect(ts.warnings.length).toBeGreaterThan(0); // Ł, ź and × are replaced
   });
 
+  it('produces the same bytes as tools/pukk.py with questions per game and random order', () => {
+    const src = { ...samplePack(), questions_per_game: 5, order: 'random' as const };
+    const bytes = encodePack(src).bytes;
+    expect(bytes).toEqual(buildWithPython(src));
+    expect(bytes[5]).toBe(1);
+    expect(new DataView(bytes.buffer).getUint16(32, true)).toBe(5);
+  });
+
   it('throws on an invalid pack', () => {
     expect(() => encodePack({ title: '', questions: [] })).toThrow(PackError);
   });
@@ -100,6 +108,13 @@ describe('analyzePack', () => {
 
   it('keeps Latin-1 and typographic punctuation as is', () => {
     expect(analyzePack({ ...valid, title: 'Ardèche – “ja” €' }).warnings).toEqual([]);
+  });
+
+  it('checks questions per game and order', () => {
+    expect(analyzePack({ ...valid, questions_per_game: 20, order: 'random' }).errors).toEqual([]);
+    const { errors } = analyzePack({ ...valid, questions_per_game: 0, order: 'shuffle' as never });
+    expect(errors.map((e) => e.path.field)).toEqual(['questions_per_game', 'order']);
+    expect(analyzePack({ ...valid, questions_per_game: 1001 }).errors).toHaveLength(1);
   });
 
   it('rejects something that is not a pack', () => {

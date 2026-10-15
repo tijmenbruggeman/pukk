@@ -16,6 +16,7 @@ extern "C" {
 #endif
 
 #define PACK_HEADER_SIZE        32
+#define PACK_HEADER_EXT_SIZE    4   /* optional, before index_offset */
 #define PACK_QUESTION_SIZE      24
 #define PACK_VERSION            1
 #define PACK_MAX_FILE_SIZE      (1024 * 1024)
@@ -28,6 +29,8 @@ extern "C" {
 #define PACK_DEFAULT_TIME_S     15
 #define PACK_MIN_TIME_S         5
 #define PACK_MAX_TIME_S         60
+
+#define PACK_FLAG_RANDOM_ORDER  0x01
 
 typedef enum {
     PACK_OK = 0,
@@ -50,6 +53,8 @@ typedef struct {
     uint32_t strings_size;
     uint32_t title;
     uint16_t question_count;
+    uint8_t flags;      /* PACK_FLAG_* */
+    uint16_t per_game;  /* questions per game; 0 = all */
 } pack_t;
 
 typedef struct {
@@ -68,6 +73,12 @@ pack_err_t pack_read_question(const pack_t *pack, uint16_t index, pack_question_
 
 /* Check the CRC and every question and string. Reads the whole file. */
 pack_err_t pack_verify(const pack_t *pack);
+
+/* The questions one game asks, as indices into the pack, in the order to ask
+ * them: per_game of them (all if 0 or more than the pack has), picked at
+ * random when that is fewer than all, then shuffled or in pack order.
+ * `order` must hold question_count entries. Returns the number of questions. */
+uint16_t pack_game_order(const pack_t *pack, uint32_t (*random)(void), uint16_t *order);
 
 /* CRC-32 (IEEE 802.3), same as zlib.crc32(). Pass 0 to start. */
 uint32_t pack_crc32(uint32_t crc, const void *data, size_t len);

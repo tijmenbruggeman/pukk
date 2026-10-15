@@ -46,6 +46,7 @@ pack_err_t pack_open(pack_t *pack, pack_read_fn read, void *ctx, uint32_t file_s
         return PACK_ERR_FORMAT;
     }
 
+    pack->flags = h[5];
     pack->question_count = get_u16(h + 6);
     pack->file_size = get_u32(h + 8);
     pack->crc32 = get_u32(h + 12);
@@ -67,12 +68,53 @@ pack_err_t pack_open(pack_t *pack, pack_read_fn read, void *ctx, uint32_t file_s
         return PACK_ERR_FORMAT;
     }
 
+    /* Packs from before the extension have their questions right after the header. */
+    if (pack->index_offset >= PACK_HEADER_SIZE + PACK_HEADER_EXT_SIZE) {
+        uint8_t ext[PACK_HEADER_EXT_SIZE];
+        if (read(ctx, PACK_HEADER_SIZE, ext, sizeof(ext)) != 0) {
+            return PACK_ERR_IO;
+        }
+        pack->per_game = get_u16(ext);
+    }
+
     /* The string table must end with 0, so every string is terminated. */
     uint8_t last;
     if (read(ctx, file_size - 1, &last, 1) != 0) {
         return PACK_ERR_IO;
     }
     return last == 0 ? PACK_OK : PACK_ERR_FORMAT;
+}
+
+uint16_t pack_game_order(const pack_t *pack, uint32_t (*random)(void), uint16_t *order)
+{
+    const uint16_t n = pack->question_count;
+    const uint16_t k = pack->per_game && pack->per_game < n ? pack->per_game : n;
+    const bool shuffle = pack->flags & PACK_FLAG_RANDOM_ORDER;
+    for (uint16_t i = 0; i < n; i++) {
+        order[i] = i;
+    }
+    if (k == n && !shuffle) {
+        return n;
+    }
+    /* Partial Fisher-Yates: order[0..k) becomes a random pick. */
+    for (uint16_t i = 0; i < k; i++) {
+        uint16_t j = (uint16_t)(i + random() % (uint32_t)(n - i));
+        uint16_t t = order[i];
+        order[i] = order[j];
+        order[j] = t;
+    }
+    if (!shuffle) {
+        /* Back in pack order (insertion sort; at most 1000). */
+        for (uint16_t i = 1; i < k; i++) {
+            uint16_t v = order[i];
+            uint16_t j = i;
+            for (; j > 0 && order[j - 1] > v; j--) {
+                order[j] = order[j - 1];
+            }
+            order[j] = v;
+        }
+    }
+    return k;
 }
 
 /* Copy the string at `offset` into buf; fails if it does not fit in `max` bytes. */

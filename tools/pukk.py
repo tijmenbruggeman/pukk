@@ -26,7 +26,10 @@ from pathlib import Path
 MAGIC = b"PUKK"
 VERSION = 1
 HEADER = struct.Struct("<4sBBHIIIIII")    # 32 bytes
+HEADER_EXT = struct.Struct("<HH")          # 4 bytes: questions per game, reserved
 QUESTION = struct.Struct("<I4IBBBB")       # 24 bytes
+FLAG_RANDOM_ORDER = 0x01
+ORDERS = ("sequential", "random")
 NO_STRING = 0xFFFFFFFF
 
 MAX_FILE_SIZE = 1024 * 1024
@@ -125,6 +128,15 @@ def build_pack(src: dict, warnings: list[str]) -> bytes:
     if len(questions) > MAX_QUESTIONS:
         raise PackError(f"at most {MAX_QUESTIONS} questions")
 
+    per_game = src.get("questions_per_game")    # None: all questions
+    if per_game is not None and (not isinstance(per_game, int) or isinstance(per_game, bool) or
+                                 not 1 <= per_game <= MAX_QUESTIONS):
+        raise PackError(f"'questions_per_game' must be 1..{MAX_QUESTIONS} (or left out for all)")
+    order = src.get("order", "sequential")
+    if order not in ORDERS:
+        raise PackError("'order' must be \"sequential\" or \"random\"")
+    flags = FLAG_RANDOM_ORDER if order == "random" else 0
+
     strings = StringTable()
     title = strings.add(check_text(src.get("title"), "title", TITLE_MAX, warnings))
 
@@ -151,15 +163,16 @@ def build_pack(src: dict, warnings: list[str]) -> bytes:
         entries += QUESTION.pack(strings.add(text), *offsets, len(answers), correct,
                                  0 if time_s == DEFAULT_TIME else time_s, 0)
 
-    index_offset = HEADER.size
+    index_offset = HEADER.size + HEADER_EXT.size
     strings_offset = index_offset + len(entries)
     file_size = strings_offset + len(strings.data)
     if file_size > MAX_FILE_SIZE:
         raise PackError(f"pack is {file_size} bytes, maximum is {MAX_FILE_SIZE}")
 
     def header(crc: int) -> bytes:
-        return HEADER.pack(MAGIC, VERSION, 0, len(questions), file_size, crc,
-                           index_offset, strings_offset, len(strings.data), title)
+        return HEADER.pack(MAGIC, VERSION, flags, len(questions), file_size, crc,
+                           index_offset, strings_offset, len(strings.data), title) + \
+            HEADER_EXT.pack(per_game or 0, 0)
 
     body = bytes(entries) + bytes(strings.data)
     crc = zlib.crc32(header(0) + body)
@@ -173,7 +186,7 @@ def read_string(table: bytes, offset: int) -> str:
 
 def inspect_pack(data: bytes) -> dict:
     """Parse a .pukk file back into the JSON source shape (for checking)."""
-    (magic, version, _flags, count, file_size, crc, index_offset, strings_offset,
+    (magic, version, flags, count, file_size, crc, index_offset, strings_offset,
      strings_size, title) = HEADER.unpack_from(data)
     if magic != MAGIC or version != VERSION or file_size != len(data):
         raise PackError("not a valid .pukk v1 file")
@@ -181,7 +194,14 @@ def inspect_pack(data: bytes) -> dict:
     if zlib.crc32(zeroed) != crc:
         raise PackError("CRC mismatch")
     table = data[strings_offset:strings_offset + strings_size]
-    out = {"title": read_string(table, title), "questions": []}
+    out = {"title": read_string(table, title)}
+    if index_offset >= HEADER.size + HEADER_EXT.size:
+        per_game = HEADER_EXT.unpack_from(data, HEADER.size)[0]
+        if per_game:
+            out["questions_per_game"] = per_game
+    if flags & FLAG_RANDOM_ORDER:
+        out["order"] = "random"
+    out["questions"] = []
     for i in range(count):
         text, *rest = QUESTION.unpack_from(data, index_offset + i * QUESTION.size)
         answer_offsets, (n_answers, correct, time_s, _) = rest[:4], rest[4:]

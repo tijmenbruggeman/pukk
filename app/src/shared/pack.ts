@@ -12,8 +12,14 @@ export interface PackQuestion {
   time?: number;
 }
 
+export type PackOrder = 'sequential' | 'random';
+
 export interface PackSource {
   title: string;
+  /** Questions in one game; left out: all. A random pick when the pack has more. */
+  questions_per_game?: number;
+  /** Ask them in pack order (default) or shuffled. */
+  order?: PackOrder;
   questions: PackQuestion[];
 }
 
@@ -33,7 +39,8 @@ export const LIMITS = {
 /** Where an issue is, so the editor can show it next to the right field. */
 export interface IssuePath {
   question?: number;
-  field: 'title' | 'questions' | 'question' | 'answers' | 'answer' | 'correct' | 'time' | 'pack';
+  field: 'title' | 'questions_per_game' | 'order' | 'questions' | 'question' | 'answers' | 'answer' | 'correct'
+    | 'time' | 'pack';
   answer?: number;
 }
 
@@ -131,6 +138,8 @@ function checkText(
 
 interface Normalized {
   title: string;
+  perGame: number; // 0 = all
+  order: PackOrder;
   questions: { text: string; answers: string[]; correct: number; time: number }[];
 }
 
@@ -142,6 +151,17 @@ function analyze(src: unknown): PackAnalysis & { normalized: Normalized | null }
   }
   const s = src as Partial<PackSource>;
   const title = checkText(s.title, { field: 'title' }, 'Titel', LIMITS.titleBytes, out);
+
+  const perGame = s.questions_per_game ?? 0;
+  if (s.questions_per_game != null &&
+      (!Number.isInteger(perGame) || perGame < 1 || perGame > LIMITS.maxQuestions)) {
+    out.errors.push({ path: { field: 'questions_per_game' },
+      message: `Vragen per spel: 1 tot ${LIMITS.maxQuestions}, of leeg voor alle vragen` });
+  }
+  const order = s.order ?? 'sequential';
+  if (order !== 'sequential' && order !== 'random') {
+    out.errors.push({ path: { field: 'order' }, message: 'Volgorde moet "sequential" of "random" zijn' });
+  }
 
   const questions: Normalized['questions'] = [];
   if (!Array.isArray(s.questions) || s.questions.length === 0) {
@@ -189,7 +209,7 @@ function analyze(src: unknown): PackAnalysis & { normalized: Normalized | null }
     });
   }
   const ok = out.errors.length === 0 && title !== null;
-  return { ...out, normalized: ok ? { title: title!, questions } : null };
+  return { ...out, normalized: ok ? { title: title!, perGame, order, questions } : null };
 }
 
 /** All problems with a pack, for showing in the editor. */
@@ -203,7 +223,9 @@ export function analyzePack(src: unknown): PackAnalysis {
 const MAGIC = [0x50, 0x55, 0x4b, 0x4b]; // "PUKK"
 const VERSION = 1;
 const HEADER_SIZE = 32;
+const HEADER_EXT_SIZE = 4; // questions per game, reserved
 const QUESTION_SIZE = 24;
+const FLAG_RANDOM_ORDER = 0x01;
 const NO_STRING = 0xffffffff;
 
 const CRC_TABLE = (() => {
@@ -283,7 +305,8 @@ export function encodePack(src: unknown): { bytes: Uint8Array; warnings: Issue[]
   });
 
   const table = strings.bytes();
-  const fileSize = HEADER_SIZE + index.length + table.length;
+  const indexOffset = HEADER_SIZE + HEADER_EXT_SIZE;
+  const fileSize = indexOffset + index.length + table.length;
   if (fileSize > LIMITS.maxFileSize) {
     throw new PackError(`Pack is ${fileSize} bytes, maximaal ${LIMITS.maxFileSize}`);
   }
@@ -292,16 +315,18 @@ export function encodePack(src: unknown): { bytes: Uint8Array; warnings: Issue[]
   const h = new DataView(out.buffer);
   out.set(MAGIC, 0);
   h.setUint8(4, VERSION);
-  h.setUint8(5, 0);
+  h.setUint8(5, normalized.order === 'random' ? FLAG_RANDOM_ORDER : 0);
   h.setUint16(6, normalized.questions.length, true);
   h.setUint32(8, fileSize, true);
   h.setUint32(12, 0, true); // crc32, filled in below
-  h.setUint32(16, HEADER_SIZE, true);
-  h.setUint32(20, HEADER_SIZE + index.length, true);
+  h.setUint32(16, indexOffset, true);
+  h.setUint32(20, indexOffset + index.length, true);
   h.setUint32(24, table.length, true);
   h.setUint32(28, title, true);
-  out.set(index, HEADER_SIZE);
-  out.set(table, HEADER_SIZE + index.length);
+  h.setUint16(32, normalized.perGame, true);
+  h.setUint16(34, 0, true);
+  out.set(index, indexOffset);
+  out.set(table, indexOffset + index.length);
   h.setUint32(12, crc32(out), true);
   return { bytes: out, warnings };
 }
