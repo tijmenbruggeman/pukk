@@ -41,6 +41,7 @@ static struct {
     uint16_t data;
     uint16_t battle;
     bool find_pending;  /* find requested while closing */
+    bool itvl_asked;    /* we asked for LINK_ITVL_MS after the guest's request */
 } s_peer = { .conn = BLE_HS_CONN_HANDLE_NONE };
 
 static struct ble_npl_event s_find_event;
@@ -81,7 +82,9 @@ static void start_scan(void)
         .itvl = BLE_GAP_SCAN_ITVL_MS(SCAN_ITVL_MS),
         .window = BLE_GAP_SCAN_WIN_MS(SCAN_WINDOW_MS),
         .passive = 1,   /* the joinable flag is in the advertisement itself */
-        .filter_duplicates = 1,
+        /* No duplicate filtering: the controller filters by address only, so
+         * a Pukk seen before it became joinable would never be seen again. */
+        .filter_duplicates = 0,
     };
     int rc = ble_gap_disc(ble_own_addr_type(), BLE_HS_FOREVER, &params, gap_cb, NULL);
     if (rc != 0) {
@@ -225,6 +228,7 @@ static void on_connect(const struct ble_gap_event *event)
         return;
     }
     s_peer.state = PEER_SETUP;
+    s_peer.itvl_asked = false;
     ESP_LOGI(TAG, "connected to %s (handle %u)", s_peer.name, s_peer.conn);
     int rc = ble_gattc_exchange_mtu(s_peer.conn, mtu_cb, NULL);
     if (rc != 0) {
@@ -281,6 +285,30 @@ static void on_notify(const struct ble_gap_event *event)
     }
 }
 
+/* The guest asks for 15-30 ms right after connecting, as it does with phones,
+ * and may get 30 ms. Ask once for our short interval again. */
+static void on_conn_update(const struct ble_gap_event *event)
+{
+    struct ble_gap_conn_desc desc;
+    if (event->conn_update.status != 0 || ble_gap_conn_find(event->conn_update.conn_handle, &desc) != 0) {
+        return;
+    }
+    ESP_LOGI(TAG, "interval %u.%02u ms", desc.conn_itvl * 125 / 100, desc.conn_itvl * 125 % 100);
+    if (desc.conn_itvl > BLE_GAP_CONN_ITVL_MS(LINK_ITVL_MS) && !s_peer.itvl_asked) {
+        s_peer.itvl_asked = true;
+        const struct ble_gap_upd_params params = {
+            .itvl_min = BLE_GAP_CONN_ITVL_MS(LINK_ITVL_MS),
+            .itvl_max = BLE_GAP_CONN_ITVL_MS(LINK_ITVL_MS),
+            .latency = 0,
+            .supervision_timeout = BLE_GAP_SUPERVISION_TIMEOUT_MS(LINK_TIMEOUT_MS),
+        };
+        int rc = ble_gap_update_params(desc.conn_handle, &params);
+        if (rc != 0) {
+            ESP_LOGW(TAG, "interval request failed (%d)", rc);
+        }
+    }
+}
+
 static int gap_cb(struct ble_gap_event *event, void *arg)
 {
     switch (event->type) {
@@ -296,12 +324,9 @@ static int gap_cb(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_NOTIFY_RX:
         on_notify(event);
         break;
-    case BLE_GAP_EVENT_CONN_UPDATE_REQ:
-    case BLE_GAP_EVENT_L2CAP_UPDATE_REQ:
-        /* The guest asks for 15-30 ms, as it does with phones; keep it short. */
-        event->conn_update_req.self_params->itvl_min = BLE_GAP_CONN_ITVL_MS(LINK_ITVL_MS);
-        event->conn_update_req.self_params->itvl_max = BLE_GAP_CONN_ITVL_MS(LINK_ITVL_MS);
-        return 0;
+    case BLE_GAP_EVENT_CONN_UPDATE:
+        on_conn_update(event);
+        break;
     case BLE_GAP_EVENT_MTU:
         ESP_LOGI(TAG, "MTU %u", event->mtu.value);
         break;
