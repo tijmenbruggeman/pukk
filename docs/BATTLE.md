@@ -1,4 +1,4 @@
-# Battle: twee Pukks, één quiz (v1)
+# Battle: twee Pukks, één quiz (v2)
 
 Eén Pukk start een battle met een pack (de **host**), een tweede doet mee
 (de **gast**). Beide spelen dezelfde vragen tegelijk; de host houdt de stand
@@ -6,6 +6,10 @@ bij en beslist per vraag wie wint. Geen telefoon of app nodig.
 
 ## Spelregels
 
+- De host kiest bij Start de vragen van dit spel, volgens de instellingen
+  van het pack (aantal per spel, op volgorde of door elkaar; zie
+  [PACKS.md](PACKS.md)). Beide spelers krijgen dezelfde vragen in dezelfde
+  volgorde.
 - Elke speler ziet de vraag op zijn eigen scherm en heeft de tijd uit het
   pack (standaard 15 s).
 - **Wie als eerste goed antwoordt, wint de vraag** en krijgt
@@ -56,10 +60,10 @@ Host → gast:
 
 | Type | Naam | Payload |
 |---|---|---|
-| `0x01` | HELLO | `u8 version` (1), `u8 len, pack name`, `u32 pack_crc32`, `u16 question_count`, `u8 len, host name` |
-| `0x03` | START | `u8 countdown_s` |
-| `0x04` | QUESTION | `u16 index` |
-| `0x06` | RESULT | `u16 index`, `u8 winner`, `u8 host_choice`, `u16 host_ms`, `u8 guest_choice`, `u16 guest_ms`, `u16 points`, `u32 host_total`, `u32 guest_total` |
+| `0x01` | HELLO | `u8 version` (2), `u8 len, pack name`, `u32 pack_crc32`, `u16 question_count`, `u8 len, host name` |
+| `0x03` | START | `u8 countdown_s`, `u16 rounds` |
+| `0x04` | QUESTION | `u16 round`, `u16 question` |
+| `0x06` | RESULT | `u16 round`, `u8 winner`, `u8 host_choice`, `u16 host_ms`, `u8 guest_choice`, `u16 guest_ms`, `u16 points`, `u32 host_total`, `u32 guest_total` |
 | `0x07` | END | `u32 host_total`, `u32 guest_total` |
 | `0x08` | ABORT | `u8 reason` |
 
@@ -68,12 +72,15 @@ Gast → host:
 | Type | Naam | Payload |
 |---|---|---|
 | `0x81` | HELLO_ACK | `u8 version`, `u8 has_pack` |
-| `0x84` | ANSWER | `u16 index`, `u8 choice`, `u16 reaction_ms` |
+| `0x84` | ANSWER | `u16 round`, `u8 choice`, `u16 reaction_ms` |
 | `0x88` | LEAVE | – |
 
 - `pack_crc32` is het `crc32`-veld uit de header van het `.pukk`-bestand.
   De gast heeft het pack als `/packs/<name>.pukk` bestaat met dezelfde CRC.
   Een pack met dezelfde naam maar een andere CRC wordt overschreven.
+- `question_count` is het aantal vragen in het pack; `rounds` het aantal in
+  dit spel. `round` telt vanaf 0, `question` is de index van de vraag in het
+  pack.
 - `winner`: `0` host, `1` gast, `0xFF` niemand.
 - `choice` in RESULT: `0`–`3` het gekozen antwoord, `0xFE` geen antwoord en
   de ander was al goed ("te laat"), `0xFF` geen antwoord en de tijd is op.
@@ -81,4 +88,6 @@ Gast → host:
   Pukk die antwoordt. Na de tijdslimiet stuurt de gast niets.
 - ABORT-redenen: `1` gestopt (KEY), `2` andere protocolversie, `3` pack kon
   niet worden overgezet.
+- Versie 2 (firmware 0.5) voegde `rounds` en `question` toe; met een Pukk op
+  versie 1 stopt de battle met "andere Pukk-versie".
 - Een verbroken verbinding stopt de battle op beide Pukks.

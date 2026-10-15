@@ -38,6 +38,8 @@ typedef struct {
     uint32_t size;
     uint16_t question_count;
     uint32_t crc32;     /* from the header: identifies the pack's contents */
+    uint16_t per_game;  /* questions in one game (at most question_count) */
+    bool random_order;
 } packs_entry_t;
 
 /* Remove leftovers of an interrupted upload and log the packs found.
@@ -55,6 +57,10 @@ size_t packs_list(packs_entry_t *entries, size_t max);
 packs_err_t packs_info(const char *name, packs_entry_t *info);
 
 packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_t *question);
+
+/* The questions for one game (see pack_game_order()). `order` must hold the
+ * pack's question_count entries; `count` gets the number to ask. */
+packs_err_t packs_game_order(const char *name, uint16_t *order, uint16_t *count);
 
 packs_err_t packs_delete(const char *name);
 

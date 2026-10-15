@@ -174,13 +174,14 @@ static void test_messages(void)
     strcpy(in.hello.pack, "tafels");
     CHECK(battle_msg_encode(&in, buf, 10) == 0, "buffer too small");
 
-    /* A newer HELLO: only the version can be read. */
-    const uint8_t newer[] = { BATTLE_MSG_HELLO, 2, 0xAA, 0xBB };
-    CHECK(battle_msg_decode(&out, newer, sizeof(newer)) && out.hello.version == 2, "newer HELLO");
+    /* Another version's HELLO: only the version can be read. */
+    const uint8_t other[] = { BATTLE_MSG_HELLO, BATTLE_PROTOCOL_VERSION + 1, 0xAA, 0xBB };
+    CHECK(battle_msg_decode(&out, other, sizeof(other)) && out.hello.version == BATTLE_PROTOCOL_VERSION + 1,
+          "other version's HELLO");
 
     memset(&in, 0, sizeof(in));
     in.type = BATTLE_MSG_RESULT;
-    in.result.index = 29;
+    in.result.round = 29;
     in.result.winner = BATTLE_GUEST;
     in.result.choice[0] = BATTLE_CHOICE_LATE;
     in.result.choice[1] = 3;
@@ -194,11 +195,25 @@ static void test_messages(void)
 
     memset(&in, 0, sizeof(in));
     in.type = BATTLE_MSG_ANSWER;
-    in.answer.index = 7;
+    in.answer.round = 7;
     in.answer.choice = 1;
     in.answer.reaction_ms = 2345;
     CHECK(roundtrip(&in, &out, &len) && len == 6, "ANSWER roundtrip");
-    CHECK(out.answer.index == 7 && out.answer.choice == 1 && out.answer.reaction_ms == 2345, "ANSWER fields");
+    CHECK(out.answer.round == 7 && out.answer.choice == 1 && out.answer.reaction_ms == 2345, "ANSWER fields");
+
+    memset(&in, 0, sizeof(in));
+    in.type = BATTLE_MSG_START;
+    in.start.countdown_s = 3;
+    in.start.rounds = 20;
+    CHECK(roundtrip(&in, &out, &len) && len == 4, "START roundtrip");
+    CHECK(out.start.countdown_s == 3 && out.start.rounds == 20, "START fields");
+
+    memset(&in, 0, sizeof(in));
+    in.type = BATTLE_MSG_QUESTION;
+    in.question.round = 19;
+    in.question.question = 999;
+    CHECK(roundtrip(&in, &out, &len) && len == 5, "QUESTION roundtrip");
+    CHECK(out.question.round == 19 && out.question.question == 999, "QUESTION fields");
 
     memset(&in, 0, sizeof(in));
     in.type = BATTLE_MSG_HELLO_ACK;
@@ -220,11 +235,11 @@ static void test_messages(void)
     CHECK(!battle_msg_decode(&out, unknown, 0), "empty");
     const uint8_t short_answer[] = { BATTLE_MSG_ANSWER, 1, 0, 2, 0x10 };
     CHECK(!battle_msg_decode(&out, short_answer, sizeof(short_answer)), "truncated");
-    const uint8_t long_question[] = { BATTLE_MSG_QUESTION, 1, 0, 0 };
+    const uint8_t long_question[] = { BATTLE_MSG_QUESTION, 1, 0, 2, 0, 0 };
     CHECK(!battle_msg_decode(&out, long_question, sizeof(long_question)), "trailing byte");
-    const uint8_t bad_name[] = { BATTLE_MSG_HELLO, 1, 3, 'a', 0, 'b', 0, 0, 0, 0, 1, 0, 1, 'X' };
+    const uint8_t bad_name[] = { BATTLE_MSG_HELLO, BATTLE_PROTOCOL_VERSION, 3, 'a', 0, 'b', 0, 0, 0, 0, 1, 0, 1, 'X' };
     CHECK(!battle_msg_decode(&out, bad_name, sizeof(bad_name)), "NUL in name");
-    const uint8_t name_past_end[] = { BATTLE_MSG_HELLO, 1, 40, 'a', 'b' };
+    const uint8_t name_past_end[] = { BATTLE_MSG_HELLO, BATTLE_PROTOCOL_VERSION, 40, 'a', 'b' };
     CHECK(!battle_msg_decode(&out, name_past_end, sizeof(name_past_end)), "name past the end");
 }
 

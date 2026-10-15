@@ -4,6 +4,7 @@
  * below needs no locking.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -92,13 +93,15 @@ static struct {
     char pack[BATTLE_PACK_NAME_MAX + 1];
     char title[PACK_TITLE_MAX + 1];
     uint32_t pack_crc;
-    uint16_t count;
+    uint16_t count;         /* questions in the pack */
+    uint16_t *order;        /* host: pack index per round */
+    uint16_t rounds;        /* questions in this game */
     char opponent[BATTLE_DEVICE_NAME_MAX + 1];
-    uint16_t index;
+    uint16_t round;         /* current question of the game, 0-based */
     pack_question_t q;
     int64_t t0;             /* when the current question appeared here */
     int64_t deadline;       /* next timed step; 0 = none */
-    battle_round_t round;   /* host */
+    battle_round_t decision;    /* host: who wins the current question */
     bool answered;          /* guest: answer sent for this question */
     uint32_t score[2];      /* by role: BATTLE_HOST, BATTLE_GUEST */
     struct {
@@ -238,6 +241,7 @@ static void stop(battle_stop_t reason)
     init_event(&e, BATTLE_EVENT_STOPPED);
     e.stopped.reason = reason;
     emit(&e);
+    free(b.order);
     memset(&b, 0, sizeof(b));
 }
 
@@ -260,14 +264,14 @@ static void leave(void)
 
 /* --- questions (both roles) ---------------------------------------------------- */
 
-static void show_question(uint16_t index)
+static void show_question(uint16_t round)
 {
-    b.index = index;
+    b.round = round;
     battle_event_t e;
     init_event(&e, BATTLE_EVENT_QUESTION);
     e.question.q = &b.q;
-    e.question.index = index;
-    e.question.count = b.count;
+    e.question.index = round;
+    e.question.count = b.rounds;
     emit(&e);
     /* The UI has built the view: the question is up from now. */
     b.t0 = now_us();
@@ -281,7 +285,7 @@ static void show_round(uint8_t winner, const uint8_t choice[2], uint16_t points)
 {
     battle_event_t e;
     init_event(&e, BATTLE_EVENT_ROUND);
-    e.round.index = b.index;
+    e.round.index = b.round;
     e.round.correct = b.q.correct;
     e.round.winner = winner == BATTLE_NOBODY ? BATTLE_NO_WINNER : winner == me() ? BATTLE_ME : BATTLE_THEM;
     e.round.choice[BATTLE_ME] = choice[me()];
@@ -319,15 +323,15 @@ static void on_answer(uint8_t choice, int64_t time_us)
     }
     uint32_t reaction_ms = time_us > b.t0 ? (uint32_t)((time_us - b.t0) / 1000) : 0;
     if (b.role == BATTLE_ROLE_HOST) {
-        if (battle_round_answer(&b.round, BATTLE_HOST, choice, reaction_ms)) {
-            ESP_LOGI(TAG, "question %u: host chose %u after %lu ms", b.index + 1, choice,
+        if (battle_round_answer(&b.decision, BATTLE_HOST, choice, reaction_ms)) {
+            ESP_LOGI(TAG, "question %u: host chose %u after %lu ms", b.round + 1, choice,
                      (unsigned long)reaction_ms);
         }
     } else if (!b.answered && reaction_ms <= b.q.time_s * 1000u) {
         b.answered = true;
         battle_msg_t m = {
             .type = BATTLE_MSG_ANSWER,
-            .answer = { .index = b.index, .choice = choice, .reaction_ms = (uint16_t)reaction_ms },
+            .answer = { .round = b.round, .choice = choice, .reaction_ms = (uint16_t)reaction_ms },
         };
         send(&m);
     }
@@ -380,39 +384,40 @@ static void host_hello(void)
     b.deadline = now_us() + HELLO_TIMEOUT_MS * 1000LL;
 }
 
-static void host_question(uint16_t index)
+static void host_question(uint16_t round)
 {
-    packs_err_t err = packs_read_question(b.pack, index, &b.q);
+    const uint16_t question = b.order[round];
+    packs_err_t err = packs_read_question(b.pack, question, &b.q);
     if (err != PACKS_OK) {
-        ESP_LOGW(TAG, "%s question %u: %s", b.pack, index, packs_err_name(err));
+        ESP_LOGW(TAG, "%s question %u: %s", b.pack, question, packs_err_name(err));
         send_abort(BATTLE_ABORT_STOPPED);
         stop(BATTLE_STOP_PACK);
         return;
     }
-    battle_msg_t m = { .type = BATTLE_MSG_QUESTION, .question.index = index };
+    battle_msg_t m = { .type = BATTLE_MSG_QUESTION, .question = { .round = round, .question = question } };
     send(&m);
-    show_question(index);
-    battle_round_start(&b.round, b.q.correct, b.q.time_s * 1000u);
+    show_question(round);
+    battle_round_start(&b.decision, b.q.correct, b.q.time_s * 1000u);
 }
 
 static void host_poll_round(void)
 {
     uint32_t now_ms = (uint32_t)((now_us() - b.t0) / 1000);
-    if (!battle_round_update(&b.round, now_ms)) {
+    if (!battle_round_update(&b.decision, now_ms)) {
         return;
     }
-    const battle_round_t *r = &b.round;
+    const battle_round_t *r = &b.decision;
     if (r->winner != BATTLE_NOBODY) {
         b.score[r->winner] += r->points;
     }
-    ESP_LOGI(TAG, "question %u: winner %d, %u points (host %lu, guest %lu)", b.index + 1,
+    ESP_LOGI(TAG, "question %u: winner %d, %u points (host %lu, guest %lu)", b.round + 1,
              r->winner == BATTLE_NOBODY ? -1 : r->winner, r->points,
              (unsigned long)b.score[BATTLE_HOST], (unsigned long)b.score[BATTLE_GUEST]);
 
     battle_msg_t m = {
         .type = BATTLE_MSG_RESULT,
         .result = {
-            .index = b.index,
+            .round = b.round,
             .winner = r->winner,
             .points = r->points,
             .total = { b.score[BATTLE_HOST], b.score[BATTLE_GUEST] },
@@ -612,9 +617,9 @@ static void host_on_message(const battle_msg_t *m)
         break;
 
     case BATTLE_MSG_ANSWER:
-        if (b.state == ST_QUESTION && m->answer.index == b.index && m->answer.choice < b.q.answer_count &&
-            battle_round_answer(&b.round, BATTLE_GUEST, m->answer.choice, m->answer.reaction_ms)) {
-            ESP_LOGI(TAG, "question %u: guest chose %u after %u ms", b.index + 1, m->answer.choice,
+        if (b.state == ST_QUESTION && m->answer.round == b.round && m->answer.choice < b.q.answer_count &&
+            battle_round_answer(&b.decision, BATTLE_GUEST, m->answer.choice, m->answer.reaction_ms)) {
+            ESP_LOGI(TAG, "question %u: guest chose %u after %u ms", b.round + 1, m->answer.choice,
                      m->answer.reaction_ms);
         }
         break;
@@ -673,8 +678,8 @@ static void host_on_deadline(void)
         host_question(0);
         break;
     case ST_REVEAL:
-        if (b.index + 1 < b.count) {
-            host_question(b.index + 1);
+        if (b.round + 1 < b.rounds) {
+            host_question(b.round + 1);
         } else {
             host_finish();
         }
@@ -689,7 +694,21 @@ static void host_start(void)
     if (!hosting() || b.state != ST_LOBBY) {
         return;
     }
-    battle_msg_t m = { .type = BATTLE_MSG_START, .start.countdown_s = BATTLE_COUNTDOWN_S };
+    /* Pick this game's questions; the guest gets them one by one. */
+    free(b.order);
+    b.order = malloc(b.count * sizeof(b.order[0]));
+    packs_err_t err = b.order ? packs_game_order(b.pack, b.order, &b.rounds) : PACKS_ERR_IO;
+    if (err != PACKS_OK) {
+        ESP_LOGW(TAG, "cannot pick questions from %s: %s", b.pack, packs_err_name(err));
+        send_abort(BATTLE_ABORT_STOPPED);
+        stop(BATTLE_STOP_PACK);
+        return;
+    }
+    ESP_LOGI(TAG, "starting: %u of %u questions", b.rounds, b.count);
+    battle_msg_t m = {
+        .type = BATTLE_MSG_START,
+        .start = { .countdown_s = BATTLE_COUNTDOWN_S, .rounds = b.rounds },
+    };
     send(&m);
     show_countdown(BATTLE_COUNTDOWN_S);
     b.deadline = now_us() + BATTLE_COUNTDOWN_S * 1000000LL;
@@ -755,30 +774,32 @@ static void guest_on_message(const battle_msg_t *m)
         break;
 
     case BATTLE_MSG_START:
-        if (b.state == ST_LOBBY) {
+        if (b.state == ST_LOBBY && m->start.rounds >= 1 && m->start.rounds <= b.count) {
+            b.rounds = m->start.rounds;
             show_countdown(m->start.countdown_s);
         }
         break;
 
     case BATTLE_MSG_QUESTION: {
-        if (b.state < ST_COUNTDOWN || b.state > ST_REVEAL || m->question.index >= b.count) {
+        if (b.state < ST_COUNTDOWN || b.state > ST_REVEAL || m->question.round >= b.rounds ||
+            m->question.question >= b.count) {
             break;
         }
-        packs_err_t err = packs_read_question(b.pack, m->question.index, &b.q);
+        packs_err_t err = packs_read_question(b.pack, m->question.question, &b.q);
         if (err != PACKS_OK) {
-            ESP_LOGW(TAG, "%s question %u: %s", b.pack, m->question.index, packs_err_name(err));
+            ESP_LOGW(TAG, "%s question %u: %s", b.pack, m->question.question, packs_err_name(err));
             battle_msg_t leave_msg = { .type = BATTLE_MSG_LEAVE };
             send(&leave_msg);
             vTaskDelay(pdMS_TO_TICKS(LEAVE_FLUSH_MS));
             stop(BATTLE_STOP_PACK);
             break;
         }
-        show_question(m->question.index);
+        show_question(m->question.round);
         break;
     }
 
     case BATTLE_MSG_RESULT:
-        if ((b.state == ST_QUESTION || b.state == ST_REVEAL) && m->result.index == b.index) {
+        if ((b.state == ST_QUESTION || b.state == ST_REVEAL) && m->result.round == b.round) {
             b.score[BATTLE_HOST] = m->result.total[0];
             b.score[BATTLE_GUEST] = m->result.total[1];
             show_round(m->result.winner, m->result.choice, m->result.points);

@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "esp_log.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "storage.h"
 #include "packs.h"
@@ -166,6 +167,9 @@ static packs_err_t read_info(const char *path, packs_entry_t *info, bool verify)
     info->size = pack.file_size;
     info->question_count = pack.question_count;
     info->crc32 = pack.crc32;
+    info->per_game = pack.per_game && pack.per_game < pack.question_count ? pack.per_game
+                                                                           : pack.question_count;
+    info->random_order = pack.flags & PACK_FLAG_RANDOM_ORDER;
     err = map_pack_err(pack_read_title(&pack, info->title, sizeof(info->title)));
     if (err == PACKS_OK && verify) {
         err = map_pack_err(pack_verify(&pack));
@@ -238,6 +242,24 @@ packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_
     close_pack(r);
     return perr == PACK_ERR_RANGE && index >= pack.question_count ? PACKS_ERR_NOT_FOUND
                                                                     : map_pack_err(perr);
+}
+
+packs_err_t packs_game_order(const char *name, uint16_t *order, uint16_t *count)
+{
+    if (!packs_name_valid(name, strlen(name))) {
+        return PACKS_ERR_INVALID_ARG;
+    }
+    char path[PATH_LEN];
+    pack_path(path, name);
+    reader_t *r;
+    pack_t pack;
+    packs_err_t err = open_pack(path, &r, &pack);
+    if (err != PACKS_OK) {
+        return err;
+    }
+    *count = pack_game_order(&pack, esp_random, order);
+    close_pack(r);
+    return PACKS_OK;
 }
 
 packs_err_t packs_delete(const char *name)

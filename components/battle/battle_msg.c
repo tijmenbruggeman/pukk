@@ -49,12 +49,14 @@ size_t battle_msg_encode(const battle_msg_t *m, uint8_t *buf, size_t size)
         break;
     case BATTLE_MSG_START:
         put(&w, m->start.countdown_s, 1);
+        put(&w, m->start.rounds, 2);
         break;
     case BATTLE_MSG_QUESTION:
-        put(&w, m->question.index, 2);
+        put(&w, m->question.round, 2);
+        put(&w, m->question.question, 2);
         break;
     case BATTLE_MSG_RESULT:
-        put(&w, m->result.index, 2);
+        put(&w, m->result.round, 2);
         put(&w, m->result.winner, 1);
         for (int p = 0; p < 2; p++) {
             put(&w, m->result.choice[p], 1);
@@ -76,7 +78,7 @@ size_t battle_msg_encode(const battle_msg_t *m, uint8_t *buf, size_t size)
         put(&w, m->hello_ack.has_pack ? 1 : 0, 1);
         break;
     case BATTLE_MSG_ANSWER:
-        put(&w, m->answer.index, 2);
+        put(&w, m->answer.round, 2);
         put(&w, m->answer.choice, 1);
         put(&w, m->answer.reaction_ms, 2);
         break;
@@ -139,12 +141,14 @@ bool battle_msg_decode(battle_msg_t *m, const uint8_t *buf, size_t len)
         break;
     case BATTLE_MSG_START:
         m->start.countdown_s = (uint8_t)get(&r, 1);
+        m->start.rounds = (uint16_t)get(&r, 2);
         break;
     case BATTLE_MSG_QUESTION:
-        m->question.index = (uint16_t)get(&r, 2);
+        m->question.round = (uint16_t)get(&r, 2);
+        m->question.question = (uint16_t)get(&r, 2);
         break;
     case BATTLE_MSG_RESULT:
-        m->result.index = (uint16_t)get(&r, 2);
+        m->result.round = (uint16_t)get(&r, 2);
         m->result.winner = (uint8_t)get(&r, 1);
         for (int p = 0; p < 2; p++) {
             m->result.choice[p] = (uint8_t)get(&r, 1);
@@ -166,7 +170,7 @@ bool battle_msg_decode(battle_msg_t *m, const uint8_t *buf, size_t len)
         m->hello_ack.has_pack = get(&r, 1) != 0;
         break;
     case BATTLE_MSG_ANSWER:
-        m->answer.index = (uint16_t)get(&r, 2);
+        m->answer.round = (uint16_t)get(&r, 2);
         m->answer.choice = (uint8_t)get(&r, 1);
         m->answer.reaction_ms = (uint16_t)get(&r, 2);
         break;

@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-#define BATTLE_PROTOCOL_VERSION 1
+#define BATTLE_PROTOCOL_VERSION 2
 #define BATTLE_MSG_MAX          80  /* longest encoded message */
 #define BATTLE_PACK_NAME_MAX    32
 #define BATTLE_DEVICE_NAME_MAX  23
@@ -54,12 +54,14 @@ typedef struct {
         } hello;
         struct {
             uint8_t countdown_s;
+            uint16_t rounds;            /* questions in this game */
         } start;
         struct {
-            uint16_t index;
+            uint16_t round;             /* 0-based */
+            uint16_t question;          /* index in the pack */
         } question;
         struct {
-            uint16_t index;
+            uint16_t round;
             uint8_t winner;
             uint8_t choice[2];          /* host, guest */
             uint16_t reaction_ms[2];
@@ -77,7 +79,7 @@ typedef struct {
             bool has_pack;
         } hello_ack;
         struct {
-            uint16_t index;
+            uint16_t round;
             uint8_t choice;
             uint16_t reaction_ms;
         } answer;

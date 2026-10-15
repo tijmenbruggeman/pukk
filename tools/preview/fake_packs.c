@@ -20,10 +20,11 @@ static const fake_question_t s_questions[] = {
 
 #define QUESTION_COUNT (sizeof(s_questions) / sizeof(s_questions[0]))
 
+/* name, title, size, questions, crc32, per game, random order */
 static const packs_entry_t s_packs[] = {
-    { "algemeen", "Algemene kennis", 4120, QUESTION_COUNT },
-    { "dieren", "Dieren in de Ardèche", 2210, 12 },
-    { "sport", "Sport & spel", 1980, 20 },
+    { "algemeen", "Algemene kennis", 4120, QUESTION_COUNT, 0, QUESTION_COUNT, false },
+    { "dieren", "Dieren in de Ardèche", 2210, 12, 0, 12, false },
+    { "sport", "Sport & spel", 1980, 20, 0, 10, true },
 };
 
 /* The preview switches this to show the empty state. */
@@ -64,6 +65,20 @@ packs_err_t packs_read_question(const char *name, uint16_t index, pack_question_
     q->answer_count = f->count;
     q->correct = f->correct;
     q->time_s = f->time_s;
+    return PACKS_OK;
+}
+
+packs_err_t packs_game_order(const char *name, uint16_t *order, uint16_t *count)
+{
+    packs_entry_t info;
+    packs_err_t err = packs_info(name, &info);
+    if (err != PACKS_OK) {
+        return err;
+    }
+    for (uint16_t i = 0; i < info.question_count; i++) {
+        order[i] = i;
+    }
+    *count = info.question_count;
     return PACKS_OK;
 }
 

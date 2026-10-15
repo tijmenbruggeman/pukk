@@ -78,8 +78,8 @@ typedef struct {
         } countdown;
         struct {
             const pack_question_t *q;
-            uint16_t index;
-            uint16_t count;
+            uint16_t index;     /* question of the game, 0-based */
+            uint16_t count;     /* questions in the game */
         } question;
         struct {
             uint16_t index;

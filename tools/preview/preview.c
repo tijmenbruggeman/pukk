@@ -327,6 +327,12 @@ int main(void)
     battle_scenes();
 
     run_ms(3000);
+    ui_show_home();
+    run_ms(300);
+    tap_text("Sport & spel");
+    run_ms(400);
+    snap("35-pack-per-game");
+
     ui_show_goodbye();
     run_ms(200);
     snap("40-goodbye");

@@ -1,9 +1,11 @@
 /*
- * Solo game: the questions of one pack in order, each with its own timer,
- * then the result. Questions are read from flash one at a time; the question
- * screen itself is quiz_view.c.
+ * Solo game: the questions of one game (all of a pack, or a pick; in order or
+ * shuffled, see pack_game_order()), each with its own timer, then the result.
+ * Questions are read from flash one at a time; the question screen itself is
+ * quiz_view.c.
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
 #include "packs.h"
@@ -18,8 +20,9 @@ static struct {
     bool active;
     char pack[PACKS_NAME_MAX + 1];
     char title[PACK_TITLE_MAX + 1];
-    uint16_t count;
-    uint16_t index;
+    uint16_t *order;    /* pack index per round */
+    uint16_t count;     /* rounds */
+    uint16_t index;     /* current round */
     uint16_t score;
     pack_question_t q;
     lv_obj_t *progress;
@@ -143,10 +146,10 @@ static void on_timeout(void)
 
 static void show_question(void)
 {
-    packs_err_t err = packs_read_question(g.pack, g.index, &g.q);
+    packs_err_t err = packs_read_question(g.pack, g.order[g.index], &g.q);
     if (err != PACKS_OK) {
         /* E.g. the pack was replaced with a shorter one during the game. */
-        ESP_LOGW(TAG, "%s question %u: %s", g.pack, g.index, packs_err_name(err));
+        ESP_LOGW(TAG, "%s question %u: %s", g.pack, g.order[g.index], packs_err_name(err));
         g.count = g.index;
         show_result();
         return;
@@ -165,11 +168,19 @@ bool game_start(const char *pack_name)
     }
 
     memset(&g, 0, sizeof(g));
+    g.order = malloc(info.question_count * sizeof(g.order[0]));
+    err = g.order ? packs_game_order(pack_name, g.order, &g.count) : PACKS_ERR_IO;
+    if (err != PACKS_OK) {
+        ESP_LOGW(TAG, "cannot play %s: %s", pack_name, packs_err_name(err));
+        free(g.order);
+        g.order = NULL;
+        return false;
+    }
     g.active = true;
     snprintf(g.pack, sizeof(g.pack), "%s", info.name);
     snprintf(g.title, sizeof(g.title), "%s", info.title);
-    g.count = info.question_count;
-    ESP_LOGI(TAG, "playing %s (\"%s\", %u questions)", g.pack, g.title, g.count);
+    ESP_LOGI(TAG, "playing %s (\"%s\", %u of %u questions, %s)", g.pack, g.title, g.count,
+             info.question_count, info.random_order ? "shuffled" : "in order");
 
     ui_clean_screen();
     lv_obj_t *view = ui_view_create(true);
@@ -193,5 +204,7 @@ void game_stop(void)
         g.next_timer = NULL;
     }
     quiz_stop();
+    free(g.order);
+    g.order = NULL;
     g.active = false;
 }

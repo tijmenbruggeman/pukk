@@ -75,8 +75,14 @@ bool pack_show(const char *pack_name)
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 156);
 
-    char text[32];
-    snprintf(text, sizeof(text), "%u vragen", info.question_count);
+    char text[64];
+    int n = snprintf(text, sizeof(text), "%u vragen", info.question_count);
+    if (info.per_game < info.question_count) {
+        n += snprintf(text + n, sizeof(text) - n, " · %u per spel", info.per_game);
+    }
+    if (info.random_order) {
+        snprintf(text + n, sizeof(text) - n, " · door elkaar");
+    }
     lv_obj_t *sub = ui_label(view, UI_FONT_SMALL, UI_COLOR_TEXT_DIM, text);
     lv_obj_align(sub, LV_ALIGN_TOP_MID, 0, 200);
 

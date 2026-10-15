@@ -13,7 +13,7 @@ APP_SRC  := $(ROOT)/tools/preview/preview.c $(ROOT)/tools/preview/fake_packs.c \
 SRC      := $(LVGL_SRC) $(UI_SRC) $(APP_SRC)
 OBJ      := $(patsubst $(ROOT)/%.c,$(OUT)/obj/%.o,$(SRC))
 
-CFLAGS  := -std=gnu11 -O1 -g -Wall -Wno-unused-parameter -DLV_CONF_INCLUDE_SIMPLE -DPUKK_PREVIEW \
+CFLAGS  := -std=gnu11 -O1 -g -Wall -Wno-unused-parameter -DLV_CONF_INCLUDE_SIMPLE -DPUKK_PREVIEW -MMD -MP \
            -I$(ROOT)/tools/preview -I$(ROOT)/tools/preview/stubs -I$(LVGL) \
            -I$(ROOT)/components/ui -I$(ROOT)/components/ui/include \
            -I$(ROOT)/components/packs/include -I$(ROOT)/components/ble/include \
@@ -21,6 +21,9 @@ CFLAGS  := -std=gnu11 -O1 -g -Wall -Wno-unused-parameter -DLV_CONF_INCLUDE_SIMPL
 
 $(OUT)/pukk-preview: $(OBJ)
 	$(CC) $(OBJ) -o $@
+
+# Recompile when a header changes.
+-include $(OBJ:.o=.d)
 
 $(OUT)/obj/%.o: $(ROOT)/%.c $(ROOT)/tools/preview/lv_conf.h
 	@mkdir -p $(dir $@)
