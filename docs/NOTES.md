@@ -406,6 +406,23 @@ Spelregels en protocol: [BATTLE.md](BATTLE.md).
   gebruikt; battle tekent er de scores van beide spelers en de keuze van de
   tegenstander (blauwe stip) omheen.
 
+### Valkuilen
+
+- **Scannen zonder duplicate filter.** De controller van de C6 filtert
+  dubbele advertenties standaard op adres en vergeet er nooit één
+  (`BT_LE_SCAN_DUPL_TYPE_DEVICE`, refresh 0). Zag de host een Pukk vóór die
+  op Meedoen tikte, dan kwam de advertentie mét vlag nooit meer door.
+- **Interval.** De gast vraagt na verbinden 15–30 ms (zoals bij telefoons) en
+  krijgt dan 30 ms; de host vraagt daarna zelf weer 15 ms.
+
+### Gemeten (beide borden, 0.4.0)
+
+- Vrije heap na boot 183 KB (was 195 KB): de tweede verbinding, de
+  central-rol en de battle-taak (5 KB stack, 2,8 KB nooit gebruikt).
+- Verbinden: binnen 0,2 s als de host al zoekt; vanaf "gevonden" tot klaar
+  (MTU, discovery, notificaties) ~0,5 s.
+- Link: 15 ms, 2M PHY, data length 251.
+
 ## Roadmap
 
 - **Fase 5: geluid.** ES8311 + speaker bij goed, fout en tijd.
