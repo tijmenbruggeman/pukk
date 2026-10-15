@@ -21,6 +21,9 @@ static const char *TAG = "pmu";
 #define REG_STATUS1             0x00 /* bit5 VBUS good, bit3 battery present */
 #define REG_STATUS2             0x01 /* bits 6:5 current direction, bits 2:0 charger state */
 #define REG_IC_TYPE             0x03
+#define REG_COMMON_CONFIG       0x10 /* bit0 soft power off: all rails off */
+#define REG_PWRON_STATUS        0x20 /* what switched the PMU on */
+#define REG_PWROFF_STATUS       0x21 /* what switched it off last time */
 #define REG_VBUS_ILIM           0x16 /* bits 2:0 VBUS input current limit */
 #define REG_GAUGE_WDT_CTRL      0x18 /* bit3 fuel gauge enable */
 #define REG_ADC_CTRL            0x30 /* bit0 VBAT, bit1 TS pin, bit2 VBUS, bit3 VSYS */
@@ -125,6 +128,43 @@ static uint16_t read_adc(uint8_t reg_high, uint8_t high_mask)
     return ((uint16_t)(hi & high_mask) << 8) | lo;
 }
 
+/* Bit names of REG_PWRON_STATUS and REG_PWROFF_STATUS, bit 0 first. */
+static const char *const s_on_sources[] = {
+    "PWR key", "IRQ pin", "USB plugged in", "battery charged", "battery inserted", "EN pin",
+};
+static const char *const s_off_sources[] = {
+    "PWR key held", "software", "EN pin", "system undervoltage", "USB overvoltage",
+    "DCDC undervoltage", "DCDC overvoltage", "overtemperature",
+};
+
+static void describe(uint8_t bits, const char *const *names, size_t count, char *buf, size_t size)
+{
+    size_t n = 0;
+    buf[0] = '\0';
+    for (size_t i = 0; i < count && n < size; i++) {
+        if (bits & BIT(i)) {
+            n += snprintf(buf + n, size - n, "%s%s", n ? ", " : "", names[i]);
+        }
+    }
+    if (n == 0) {
+        snprintf(buf, size, "unknown (0x%02x)", bits);
+    }
+}
+
+/* Why the board is on, and why it went off last time. */
+static void log_power_sources(void)
+{
+    uint8_t on = 0, off = 0;
+    if (reg_read(REG_PWRON_STATUS, &on) != ESP_OK || reg_read(REG_PWROFF_STATUS, &off) != ESP_OK) {
+        return;
+    }
+    char on_text[64], off_text[96];
+    describe(on, s_on_sources, sizeof(s_on_sources) / sizeof(s_on_sources[0]), on_text, sizeof(on_text));
+    describe(off, s_off_sources, sizeof(s_off_sources) / sizeof(s_off_sources[0]), off_text,
+             sizeof(off_text));
+    ESP_LOGI(TAG, "switched on by: %s; last off by: %s", on_text, off_text);
+}
+
 esp_err_t board_pmu_init(void)
 {
     if (!s_dev) {
@@ -155,7 +195,17 @@ esp_err_t board_pmu_init(void)
     reg_read(REG_DC_ONOFF, &dc_onoff);
     reg_read(REG_LDO_ONOFF0, &ldo_onoff);
     ESP_LOGI(TAG, "AXP2101 ready (DC on/off 0x%02x, LDO on/off 0x%02x)", dc_onoff, ldo_onoff);
+    log_power_sources();
     return ESP_OK;
+}
+
+esp_err_t board_pmu_power_off(void)
+{
+    ESP_LOGI(TAG, "switching off");
+    ESP_RETURN_ON_ERROR(reg_update(REG_COMMON_CONFIG, BIT(0), BIT(0)), TAG, "power off failed");
+    vTaskDelay(pdMS_TO_TICKS(1000)); /* the rails drop within milliseconds */
+    ESP_LOGE(TAG, "still on after switching off");
+    return ESP_FAIL;
 }
 
 esp_err_t board_pmu_set_aldo3(bool on)

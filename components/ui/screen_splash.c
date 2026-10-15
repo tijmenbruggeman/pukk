@@ -1,6 +1,7 @@
 /*
  * Splash view: the wordmark rises into place while the rest of the device
- * starts (storage, buttons, BLE).
+ * starts (storage, buttons, BLE). The goodbye view is its counterpart, just
+ * before the board switches off.
  */
 #include "ui_priv.h"
 
@@ -27,4 +28,19 @@ void splash_show(void)
     lv_anim_set_duration(&a, 700);
     lv_anim_set_path_cb(&a, lv_anim_path_ease_out);
     lv_anim_start(&a);
+}
+
+void goodbye_show(void)
+{
+    ui_clean_screen();
+    lv_obj_t *view = ui_view_create(false);
+
+    lv_obj_t *logo = ui_label(view, UI_FONT_LOGO, UI_COLOR_BRAND, "pukk");
+    lv_obj_align(logo, LV_ALIGN_CENTER, 0, -40);
+
+    lv_obj_t *bye = ui_label(view, UI_FONT_TITLE, UI_COLOR_TEXT, "Tot later!");
+    lv_obj_align(bye, LV_ALIGN_CENTER, 0, 60);
+
+    lv_obj_t *hint = ui_label(view, UI_FONT_SMALL, UI_COLOR_TEXT_DIM, "Aanzetten: middelste knop");
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -40);
 }

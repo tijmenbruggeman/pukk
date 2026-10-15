@@ -35,6 +35,9 @@ void ui_show_splash(void);
 /* Show the pack list (after the splash has been up for a moment). */
 void ui_show_home(void);
 
+/* Shown just before the board switches off. ui_show_home() leaves it again. */
+void ui_show_goodbye(void);
+
 /* KEY button: leave a game or battle and return to the pack list. */
 void ui_back(void);
 

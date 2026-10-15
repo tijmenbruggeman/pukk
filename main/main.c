@@ -21,6 +21,8 @@
 static const char *TAG = "pukk";
 
 #define STATUS_PERIOD_MS (30 * 1000)
+#define LEAVE_MS         300    /* battle goodbye message (battle.c waits 150 ms) */
+#define GOODBYE_MS       1200
 
 /* Log free internal and DMA-capable heap, plus the change since the previous step. */
 static void log_heap(const char *step)
@@ -52,12 +54,28 @@ static void init_nvs(void)
     ESP_ERROR_CHECK(err);
 }
 
-static void on_button(board_button_t button, void *ctx)
+/* Holding BOOT switches the board off; PWR switches it on again. */
+static void power_off(void)
 {
-    if (button == BOARD_BUTTON_KEY) {
+    /* A battle ends properly, so the other Pukk says we stopped instead of
+     * "connection lost". Harmless when there is no battle. */
+    battle_leave();
+    vTaskDelay(pdMS_TO_TICKS(LEAVE_MS));
+    ui_show_goodbye();
+    vTaskDelay(pdMS_TO_TICKS(GOODBYE_MS));
+    board_pmu_power_off(); /* only returns if switching off failed */
+    ui_show_home();
+}
+
+/* Runs in the button task. */
+static void on_button(board_button_t button, board_button_event_t event, void *ctx)
+{
+    if (button == BOARD_BUTTON_KEY && event == BOARD_BUTTON_PRESS) {
         ui_back();
-    } else if (button == BOARD_BUTTON_BOOT) {
+    } else if (button == BOARD_BUTTON_BOOT && event == BOARD_BUTTON_CLICK) {
         ui_toggle_debug();
+    } else if (button == BOARD_BUTTON_BOOT && event == BOARD_BUTTON_LONG_PRESS) {
+        power_off();
     }
 }
 

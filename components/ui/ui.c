@@ -16,6 +16,7 @@ typedef enum {
     VIEW_PACK,
     VIEW_GAME,
     VIEW_BATTLE,
+    VIEW_GOODBYE,
 } view_t;
 
 static view_t s_view = VIEW_NONE;
@@ -184,6 +185,16 @@ void ui_show_home(void)
         ui_go_home();
     }
     ui_unlock();
+}
+
+void ui_show_goodbye(void)
+{
+    if (ui_lock(-1)) {
+        leave_view();
+        goodbye_show();
+        s_view = VIEW_GOODBYE;
+        ui_unlock();
+    }
 }
 
 void ui_back(void)

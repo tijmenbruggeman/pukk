@@ -42,8 +42,9 @@ void ui_go_home(void);
 void ui_go_pack(const char *pack_name);
 void ui_go_game(const char *pack_name);
 
-/* Splash (screen_splash.c). */
+/* Splash and goodbye (screen_splash.c). */
 void splash_show(void);
+void goodbye_show(void);
 
 /* Pack list (screen_home.c). */
 void home_show(void);

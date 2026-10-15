@@ -39,6 +39,10 @@ const char *board_charge_state_name(board_charge_state_t state);
 /* Read the status and print it on one log line. */
 void board_pmu_log_status(void);
 
+/* Switch every rail off, the ESP32 included; only returns on failure. The PWR
+ * key switches the board on again. */
+esp_err_t board_pmu_power_off(void);
+
 #ifdef __cplusplus
 }
 #endif

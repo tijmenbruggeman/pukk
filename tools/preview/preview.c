@@ -325,5 +325,10 @@ int main(void)
 
     ui_set_battery(82, false);
     battle_scenes();
+
+    run_ms(3000);
+    ui_show_goodbye();
+    run_ms(200);
+    snap("40-goodbye");
     return 0;
 }
