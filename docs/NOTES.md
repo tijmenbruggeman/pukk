@@ -431,7 +431,9 @@ Spelregels en protocol: [BATTLE.md](BATTLE.md).
 
 ## Roadmap
 
-- **Fase 5: geluid.** ES8311 + speaker bij goed, fout en tijd.
+Geen geplande fases. **Geluid** (ES8311 + speaker bij goed, fout en tijd,
+eerder fase 5) is geschrapt: een stille Pukk is juist prettig. De I2S-pinnen
+staan nog in de pinnentabel voor als het ooit toch komt.
 
 ## Geheugen: statisch (uit `idf.py size`)
 

@@ -43,7 +43,7 @@ het mee. Wie als eerste goed antwoordt, krijgt 500–1000 punten (sneller =
 meer); voor de ander is de vraag dan voorbij. Regels en protocol:
 [docs/BATTLE.md](docs/BATTLE.md).
 
-**Fase 5** (geluid) staat op de roadmap in [docs/NOTES.md](docs/NOTES.md).
+Geluid (een eerder geplande fase 5) is geschrapt: Pukk blijft bewust stil.
 
 Beslissingen en open vragen staan in [docs/NOTES.md](docs/NOTES.md).
 
