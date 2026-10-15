@@ -95,6 +95,16 @@ describe('packs', () => {
     expect((await call('GET', `/api/packs/${created.id}`)).status).toBe(404);
   });
 
+  it('keeps questions per game and order', async () => {
+    const withOptions = { ...pack, questions_per_game: 20, order: 'random' };
+    const created = await (await call('POST', '/api/packs', { pack: withOptions })).json();
+    expect(created.valid).toBe(true);
+    const got = await (await call('GET', `/api/packs/${created.id}`)).json();
+    expect(got.pack).toEqual(withOptions);
+    expect((await call('POST', '/api/packs', { pack: { ...pack, order: 'shuffle' } })).status).toBe(400);
+    expect((await call('POST', '/api/packs', { pack: { ...pack, questions_per_game: 'veel' } })).status).toBe(400);
+  });
+
   it('stores unfinished drafts but marks them invalid', async () => {
     const draft = { title: 'Nog niks', questions: [{ question: '', answers: ['', ''], correct: 0 }] };
     const res = await call('POST', '/api/packs', { pack: draft });

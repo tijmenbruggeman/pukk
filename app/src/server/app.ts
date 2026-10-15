@@ -16,7 +16,7 @@ import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { secureHeaders } from 'hono/secure-headers';
-import { LIMITS, type PackSource } from '../shared/pack.ts';
+import { LIMITS, type PackOrder, type PackSource } from '../shared/pack.ts';
 import { Auth, SESSION_COOKIE, SESSION_DAYS } from './auth.ts';
 import { NameTakenError, type PackStore } from './store.ts';
 
@@ -51,6 +51,13 @@ function parseDraft(body: unknown): { pack: PackSource; name?: string } | string
   if (!isString(p.title, DRAFT.text) || !Array.isArray(p.questions) || p.questions.length > DRAFT.questions) {
     return 'Ongeldig pack';
   }
+  // Out-of-range numbers are kept (a draft); analyzePack() reports them.
+  const perGame = p.questions_per_game ?? undefined;
+  const order = p.order ?? undefined;
+  if ((perGame !== undefined && !Number.isInteger(perGame)) ||
+      (order !== undefined && order !== 'sequential' && order !== 'random')) {
+    return 'Ongeldig pack';
+  }
   const questions = [];
   for (const q of p.questions as unknown[]) {
     if (typeof q !== 'object' || q === null) {
@@ -64,7 +71,15 @@ function parseDraft(body: unknown): { pack: PackSource; name?: string } | string
     }
     questions.push({ question, answers, correct: correct as number, ...(time === undefined ? {} : { time: time as number }) });
   }
-  return { pack: { title: p.title, questions }, name };
+  return {
+    pack: {
+      title: p.title,
+      ...(perGame === undefined ? {} : { questions_per_game: perGame as number }),
+      ...(order === undefined ? {} : { order: order as PackOrder }),
+      questions,
+    },
+    name,
+  };
 }
 
 export function createApp({ store, auth, staticDir }: AppOptions): Hono {

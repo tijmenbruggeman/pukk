@@ -434,6 +434,30 @@ progress::-moz-progress-bar {
   padding: 4px 10px;
 }
 
+.game-settings {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.game-settings label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.game-settings input {
+  width: 90px;
+  padding: 4px 10px;
+}
+
+.game-settings select {
+  padding: 4px 10px;
+}
+
 .push {
   display: flex;
   align-items: center;

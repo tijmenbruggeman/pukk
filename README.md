@@ -220,6 +220,12 @@ Een pack is een JSON-bestand, zie [packs/voorbeeld.json](packs/voorbeeld.json)
 en [docs/PACKS.md](docs/PACKS.md). Tekst mag Latin-1 bevatten (é, ë, ü, ç,
 €, …); andere letters met een accent zet de tool om naar de basisletter.
 
+Twee optionele instellingen bepalen hoe een spel loopt:
+`"questions_per_game": 20` kiest per spel willekeurig 20 vragen uit het pack
+(weglaten = alle), en `"order": "random"` stelt ze door elkaar in plaats van op
+volgorde. In een battle krijgen beide spelers dezelfde vragen. In de web-app
+staan ze onder de titel.
+
 Eenmalig de Python-omgeving voor de tool (bleak voor Bluetooth):
 
 ```bash
@@ -241,7 +247,8 @@ Bluetooth-toegang aan de terminal-app; Warp en het terminalpaneel van de
 Claude-app declareren geen Bluetooth-gebruik, en dan wordt Python direct
 gestopt (crash met `Namespace TCC`).
 
-Tests zonder hardware (packformaat, met AddressSanitizer):
+Tests zonder hardware (packformaat, vraagselectie, battle-regels; met
+AddressSanitizer):
 
 ```bash
 tools/test_host.sh

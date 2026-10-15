@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  analyzePack, encodePack, LIMITS, PACK_NAME_RE, utf8Length, type PackQuestion, type PackSource,
+  analyzePack, encodePack, LIMITS, PACK_NAME_RE, utf8Length, type PackOrder, type PackQuestion, type PackSource,
 } from '../../shared/pack.ts';
 import { api } from '../api.ts';
 import { devices, useDevices } from '../ble/devices.ts';
@@ -9,6 +9,31 @@ import { formatBytes } from '../theme.ts';
 import { QuestionCard } from './QuestionCard.tsx';
 
 const NEW_QUESTION: PackQuestion = { question: '', answers: ['', '', '', ''], correct: 0 };
+
+/** What one game on the Pukk will be, in words. */
+function gameSummary(pack: PackSource): string {
+  const n = pack.questions.length;
+  const per = pack.questions_per_game;
+  const shuffled = pack.order === 'random';
+  if (per !== undefined && per > 0 && per < n) {
+    return `Elk spel: ${per} willekeurige van de ${n} vragen, ${shuffled ? 'door elkaar' : 'in de volgorde van het pack'}.`;
+  }
+  const all = `Elk spel: alle ${n} ${n === 1 ? 'vraag' : 'vragen'}, ${shuffled ? 'door elkaar' : 'op volgorde'}.`;
+  return per !== undefined && per > n ? `${all} Het pack heeft er minder dan ${per}.` : all;
+}
+
+/** Leave a setting out of the pack when it has its default value. */
+function withSetting<K extends 'questions_per_game' | 'order'>(
+  pack: PackSource, key: K, value: PackSource[K] | undefined,
+): PackSource {
+  const next = { ...pack };
+  if (value === undefined) {
+    delete next[key];
+  } else {
+    next[key] = value;
+  }
+  return next;
+}
 
 function download(filename: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
@@ -137,6 +162,7 @@ export function PackEditor({ id }: { id: string }) {
   };
 
   const titleIssues = analysis.errors.filter((i) => i.path.field === 'title');
+  const settingIssues = analysis.errors.filter((i) => i.path.field === 'questions_per_game' || i.path.field === 'order');
   const connected = pukks.filter((p) => p.status === 'connected');
   const canPush = analysis.errors.length === 0 && nameValid;
 
@@ -176,6 +202,34 @@ export function PackEditor({ id }: { id: string }) {
           }}
         />
       </label>
+
+      <div className="game-settings">
+        <label>
+          Vragen per spel
+          <input
+            type="number"
+            min={1}
+            max={LIMITS.maxQuestions}
+            placeholder="alle"
+            value={pack.questions_per_game ?? ''}
+            onChange={(e) => change(withSetting(pack, 'questions_per_game',
+              e.target.value === '' ? undefined : Number(e.target.value)))}
+          />
+        </label>
+        <label>
+          Volgorde
+          <select
+            value={pack.order ?? 'sequential'}
+            onChange={(e) => change(withSetting(pack, 'order',
+              e.target.value === 'random' ? 'random' as PackOrder : undefined))}
+          >
+            <option value="sequential">Op volgorde</option>
+            <option value="random">Door elkaar</option>
+          </select>
+        </label>
+        <small>{gameSummary(pack)}</small>
+      </div>
+      {settingIssues.map((i, k) => <p key={k} className="error small">{i.message}</p>)}
 
       {error && <p className="error">{error}</p>}
       {notice && <p className="notice">{notice}</p>}
