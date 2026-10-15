@@ -249,11 +249,13 @@ tools/test_host.sh
 
 ## Knoppen
 
+Van links naar rechts met het scherm rechtop: BOOT, PWR, IO10.
+
 | Silkscreen | GPIO | Functie |
 |---|---|---|
-| IO10 | 10 | KEY: vanuit een spel terug naar de packlijst; in een battle stoppen (voor allebei) |
-| BOOT | 9 | downloadmodus (bij aanzetten); daarna FPS/geheugen-overlays aan/uit |
-| PWR | PMU (gespiegeld op GPIO18) | aan/uit (lang drukken = uit), verder alleen gelogd |
+| IO10 | 10 | rechts, KEY: vanuit een spel terug naar de packlijst; in een battle stoppen (voor allebei) |
+| BOOT | 9 | links: **1,5 s vasthouden = uitzetten**; kort = FPS/geheugen-overlays aan/uit; bij aanzetten: downloadmodus |
+| PWR | PMU (gespiegeld op GPIO18) | midden: kort = aanzetten; enkele seconden vasthouden = hard uit (door de PMU zelf) |
 
 ## BLE
 

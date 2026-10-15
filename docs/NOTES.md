@@ -163,6 +163,12 @@ Afwijkingen:
   (elke 30 s) logt hoeveel stack van main en de LVGL-taak nooit gebruikt is;
   daarmee kunnen beide later omlaag.
 - LVGL-voorbeelden en -demo's worden niet meegebouwd.
+- **Uitzetten**: de knoppen zitten (scherm rechtop) van links naar rechts als
+  BOOT, PWR, IO10. BOOT 1,5 s vasthouden zet bit 0 van AXP2101-register 0x10
+  ("soft power off"): alle rails uit, ook die van de C6. Ook met USB eraan
+  blijft het bord uit; PWR zet het weer aan. Bij elke boot logt de PMU
+  waardoor hij aanging en waardoor hij de vorige keer uitging (registers
+  0x20/0x21), bijv. `switched on by: PWR key; last off by: software`.
 
 ## Fase 1: packs
 
